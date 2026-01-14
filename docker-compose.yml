@@ -1,0 +1,73 @@
+# MentorLed AI-Ops Platform - Docker Compose Configuration
+# Backend services only (DB, Redis, FastAPI)
+# Frontend not included - see BUILD_SUMMARY.md
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: mentorled
+      POSTGRES_PASSWORD: mentorled_dev
+      POSTGRES_DB: mentorled
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mentorled"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mentorled:mentorled_dev@db:5432/mentorled
+      REDIS_URL: redis://redis:6379
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:3001","http://localhost:3002"]'
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./scripts:/scripts
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend service commented out - not included in this build
+  # The backend API is fully functional and ready for any frontend framework
+  # See BUILD_SUMMARY.md for details
+  #
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     NEXT_PUBLIC_API_URL: http://localhost:8000
+  #   depends_on:
+  #     - backend
+  #   volumes:
+  #     - ./frontend:/app
+  #     - /app/node_modules
+  #     - /app/.next
+
+volumes:
+  postgres_data:
