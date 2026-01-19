@@ -17,6 +17,7 @@ from app.schemas.evaluation import (
     ScreeningQueueResponse
 )
 from app.utils.audit import log_decision
+from app.utils.email import email_service
 
 router = APIRouter(prefix="/screening")
 
@@ -240,6 +241,7 @@ async def approve_application_evaluation(
     override_decision: Optional[str] = None,
     override_reason: Optional[str] = None,
     reviewer_id: Optional[UUID] = None,
+    background_tasks: BackgroundTasks = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -273,5 +275,21 @@ async def approve_application_evaluation(
         applicant.status = "not_eligible"
 
     await db.commit()
+
+    # Send email notification in background
+    if background_tasks:
+        final_decision = override_decision if override_decision else evaluation.outcome
+        background_tasks.add_task(
+            email_service.send_evaluation_result,
+            applicant_email=applicant.email,
+            applicant_name=applicant.name,
+            overall_score=evaluation.overall_score or 0,
+            eligibility=final_decision,
+            reasoning=evaluation.reasoning or "",
+            strengths=evaluation.scores.get("strengths", []) if evaluation.scores else [],
+            concerns=evaluation.flags or [],
+            confidence=evaluation.confidence,
+            recommended_action=final_decision
+        )
 
     return {"status": "success", "new_status": applicant.status}

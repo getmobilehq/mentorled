@@ -1,16 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel
+from datetime import datetime
 
 from app.database import get_db
 from app.models.fellow import Fellow
 from app.models.check_in import CheckIn
 from app.models.risk_assessment import RiskAssessment
 from app.models.warning import Warning
+from app.models.applicant import Applicant
 from app.agents.delivery_agent import DeliveryAgent
+from app.utils.email import email_service
 
 router = APIRouter(prefix="/delivery")
 
@@ -172,6 +175,7 @@ async def draft_warning(
 async def approve_warning(
     warning_id: UUID,
     request: WarningApproveRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Approve or reject a warning draft."""
@@ -185,15 +189,43 @@ async def approve_warning(
     result = await db.execute(select(Fellow).where(Fellow.id == warning.fellow_id))
     fellow = result.scalar_one_or_none()
 
+    # Get fellow's email from applicant record
+    applicant = None
+    if fellow:
+        result = await db.execute(select(Applicant).where(Applicant.id == fellow.applicant_id))
+        applicant = result.scalar_one_or_none()
+
     if request.approved:
         # Use edited message if provided, otherwise use AI draft
         warning.final_message = request.edited_message or warning.ai_draft
         warning.sent = True
-        warning.sent_at = db.execute(select(db.func.now())).scalar()
+        warning.sent_at = datetime.utcnow()
 
         # Update fellow's warning count
         if fellow:
             fellow.warnings_count = (fellow.warnings_count or 0) + 1
+
+            # Send warning email in background
+            if applicant and applicant.email:
+                # Get latest risk assessment for context
+                result = await db.execute(
+                    select(RiskAssessment)
+                    .where(RiskAssessment.fellow_id == fellow.id)
+                    .order_by(RiskAssessment.assessed_at.desc())
+                    .limit(1)
+                )
+                risk = result.scalar_one_or_none()
+
+                background_tasks.add_task(
+                    email_service.send_fellow_warning,
+                    fellow_email=applicant.email,
+                    fellow_name=fellow.name if hasattr(fellow, 'name') else applicant.name,
+                    warning_number=warning.warning_number,
+                    message=warning.final_message,
+                    risk_level=risk.risk_level if risk else fellow.current_risk_level,
+                    required_actions=warning.required_actions,
+                    consequences=warning.consequences
+                )
 
     warning.requires_human_review = False
 

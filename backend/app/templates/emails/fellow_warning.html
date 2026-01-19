@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Important: Action Required</h1>
+
+<p>Dear {{ fellow_name }},</p>
+
+<p>We're reaching out regarding your progress in the MentorLed program.</p>
+
+<div class="highlight">
+    <h2>Warning Notice</h2>
+    <p>
+        <strong>Warning Level:</strong>
+        {% if warning_number == 1 %}
+            <span class="badge badge-warning">First Warning</span>
+        {% elif warning_number == 2 %}
+            <span class="badge badge-danger">Final Warning</span>
+        {% else %}
+            <span class="badge badge-info">Notice</span>
+        {% endif %}
+    </p>
+    {% if risk_level %}
+    <p><strong>Current Risk Level:</strong>
+        {% if risk_level == "critical" %}
+            <span class="badge badge-danger">Critical</span>
+        {% elif risk_level == "at_risk" %}
+            <span class="badge badge-warning">At Risk</span>
+        {% else %}
+            <span class="badge badge-info">{{ risk_level|replace("_", " ")|capitalize }}</span>
+        {% endif %}
+    </p>
+    {% endif %}
+</div>
+
+<h2>Details</h2>
+<div style="white-space: pre-line;">{{ message }}</div>
+
+{% if required_actions and required_actions|length > 0 %}
+<h2>Required Actions</h2>
+<ul>
+    {% for action in required_actions %}
+    <li>{{ action }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+{% if consequences %}
+<div class="highlight">
+    <h2>Consequences</h2>
+    <p>{{ consequences }}</p>
+</div>
+{% endif %}
+
+<h2>Next Steps</h2>
+<p>
+    {% if warning_number == 1 %}
+    This is your first warning. We believe in your potential and want to support your success. Please take the actions outlined above seriously and reach out if you need help.
+    {% elif warning_number == 2 %}
+    This is your final warning. Failure to address the issues outlined above may result in removal from the program. We strongly encourage you to schedule a meeting with your mentor immediately.
+    {% else %}
+    Please review the information above and take appropriate action. We're here to support your success.
+    {% endif %}
+</p>
+
+<p>
+    <a href="https://mentorled.com/support" class="button">Schedule a Meeting</a>
+</p>
+
+<p>
+    We're committed to your success and want to help you get back on track. Please don't hesitate to reach out to your mentor or the program team.
+</p>
+
+<p>
+    Best regards,<br>
+    The MentorLed Team
+</p>
+{% endblock %}

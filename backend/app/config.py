@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     COST_PER_1M_INPUT_TOKENS: float = 3.0
     COST_PER_1M_OUTPUT_TOKENS: float = 15.0
 
+    # Email Settings (Phase 3)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = "hello@mentorled.com"
+    SMTP_PASSWORD: str = "V3l0c!ty"
+    SMTP_FROM_EMAIL: str = "hello@mentorled.com"
+    SMTP_FROM_NAME: str = "MentorLed"
+    ENABLE_EMAIL: bool = False
+
     @field_validator('CORS_ORIGINS', mode='before')
     @classmethod
     def parse_cors_origins(cls, v):

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Application Evaluation Update</h1>
+
+<p>Dear {{ applicant_name }},</p>
+
+<p>Thank you for your application to the MentorLed program. We have completed the initial review of your application.</p>
+
+<div class="highlight">
+    <h2>Evaluation Result</h2>
+    <p>
+        <strong>Status:</strong>
+        {% if eligibility == "eligible" %}
+            <span class="badge badge-success">✓ Eligible</span>
+        {% elif eligibility == "not_eligible" %}
+            <span class="badge badge-danger">✗ Not Eligible</span>
+        {% else %}
+            <span class="badge badge-warning">⚠ Under Review</span>
+        {% endif %}
+    </p>
+    <p><strong>Overall Score:</strong> {{ overall_score }}/100</p>
+    {% if confidence %}
+    <p><strong>Confidence:</strong> {{ (confidence * 100)|round|int }}%</p>
+    {% endif %}
+</div>
+
+{% if reasoning %}
+<h2>Evaluation Summary</h2>
+<p>{{ reasoning }}</p>
+{% endif %}
+
+{% if strengths and strengths|length > 0 %}
+<h2>Strengths</h2>
+<ul>
+    {% for strength in strengths %}
+    <li>{{ strength }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+{% if concerns and concerns|length > 0 %}
+<h2>Areas for Consideration</h2>
+<ul>
+    {% for concern in concerns %}
+    <li>{{ concern }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+{% if recommended_action %}
+<div class="highlight">
+    <h2>Next Steps</h2>
+    <p><strong>Recommended Action:</strong> {{ recommended_action|replace("_", " ")|capitalize }}</p>
+
+    {% if eligibility == "eligible" %}
+    <p>Congratulations! You will receive further instructions about the Microship challenge within the next 48 hours.</p>
+    {% elif eligibility == "review" %}
+    <p>Our team will review your application in more detail and get back to you within 5 business days.</p>
+    {% else %}
+    <p>While we cannot move forward with your application at this time, we encourage you to apply to future cohorts as you continue developing your skills.</p>
+    {% endif %}
+</div>
+{% endif %}
+
+<p>If you have any questions about this evaluation, please don't hesitate to reach out to our program team.</p>
+
+<p>
+    Best regards,<br>
+    The MentorLed Team
+</p>
+{% endblock %}

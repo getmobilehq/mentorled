@@ -6,6 +6,7 @@ import logging
 from app.config import settings
 from app.database import engine, Base
 from app.api.router import api_router
+from app.services.scheduler import scheduler_service
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,11 +25,18 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
 
     logger.info("Database tables created/verified")
+
+    # Start background scheduler
+    scheduler_service.start()
+    logger.info("Background scheduler started")
+
     logger.info("API ready to accept requests")
     yield
 
     # Shutdown
     logger.info("Shutting down MentorLed AI-Ops Platform...")
+    scheduler_service.shutdown()
+    logger.info("Scheduler shutdown complete")
     await engine.dispose()
 
 app = FastAPI(

@@ -35,6 +35,7 @@ class Fellow(Base):
     )
     microship_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     current_risk_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
+    current_risk_level: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # "low", "medium", "at_risk", "critical"
     milestone_1_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     milestone_2_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     milestone_3_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)

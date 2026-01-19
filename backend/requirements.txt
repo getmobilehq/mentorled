@@ -11,3 +11,15 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 alembic==1.13.1
 httpx==0.26.0
+
+# Phase 3: Email & Notifications
+aiosmtplib==3.0.1
+jinja2==3.1.3
+email-validator==2.1.0
+
+# Phase 3: Scheduled Tasks
+apscheduler==3.10.4
+
+# Phase 3: Bulk Operations
+pandas==2.1.4
+openpyxl==3.1.2
