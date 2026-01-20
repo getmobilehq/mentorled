@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "MentorLed"
     ENABLE_EMAIL: bool = False
 
+    # Slack Notifications (Phase 3)
+    SLACK_WEBHOOK_URL: str = ""
+    ENABLE_SLACK_NOTIFICATIONS: bool = False
+    SLACK_MENTION_USER: str = ""  # Slack user ID to mention for urgent alerts
+
     @field_validator('CORS_ORIGINS', mode='before')
     @classmethod
     def parse_cors_origins(cls, v):

@@ -14,6 +14,7 @@ from app.models.warning import Warning
 from app.models.applicant import Applicant
 from app.agents.delivery_agent import DeliveryAgent
 from app.utils.email import email_service
+from app.utils.slack import slack_notifier
 
 router = APIRouter(prefix="/delivery")
 
@@ -68,6 +69,7 @@ async def analyze_check_in(
 @router.post("/risk/assess")
 async def assess_risk(
     request: RiskAssessRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Run risk assessment for a fellow."""
@@ -106,6 +108,23 @@ async def assess_risk(
 
     await db.commit()
     await db.refresh(new_assessment)
+
+    # Send Slack notification for high-risk fellows
+    if assessment["risk_level"] in ["at_risk", "critical"]:
+        # Get applicant for fellow name
+        applicant_result = await db.execute(select(Applicant).where(Applicant.id == fellow.applicant_id))
+        applicant = applicant_result.scalar_one_or_none()
+
+        if applicant:
+            background_tasks.add_task(
+                slack_notifier.notify_high_risk_fellow,
+                fellow_id=str(fellow.id),
+                fellow_name=applicant.name,
+                role=fellow.role,
+                risk_level=assessment["risk_level"],
+                risk_score=assessment["risk_score"],
+                concerns=assessment.get("concerns", [])
+            )
 
     return {
         "assessment_id": str(new_assessment.id),

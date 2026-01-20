@@ -183,6 +183,40 @@ export const warningsAPI = {
     api.get('/api/warnings', { params: { cohort_id: cohortId, level, acknowledged, limit, offset } }),
 };
 
+export const analyticsAPI = {
+  getDashboard: (cohortId?: string) =>
+    api.get('/api/analytics/dashboard', { params: { cohort_id: cohortId } }),
+  getConversionFunnel: (cohortId?: string) =>
+    api.get('/api/analytics/conversion-funnel', { params: { cohort_id: cohortId } }),
+  getAIPerformance: () =>
+    api.get('/api/analytics/ai-performance'),
+};
+
+export const bulkAPI = {
+  evaluateApplications: (applicantIds: string[], autoProcess: boolean = false) =>
+    api.post('/api/bulk/evaluate', { applicant_ids: applicantIds, auto_process: autoProcess }),
+  updateStatus: (applicantIds: string[], newStatus: string) =>
+    api.post('/api/bulk/status/update', { applicant_ids: applicantIds, new_status: newStatus }),
+  importApplicants: (file: File, cohortId?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (cohortId) formData.append('cohort_id', cohortId);
+    return api.post('/api/bulk/import/applicants', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  exportApplicants: (cohortId?: string, status?: string) =>
+    api.get('/api/bulk/export/applicants', {
+      params: { cohort_id: cohortId, status },
+      responseType: 'blob'
+    }),
+  exportFellows: (cohortId?: string) =>
+    api.get('/api/bulk/export/fellows', {
+      params: { cohort_id: cohortId },
+      responseType: 'blob'
+    }),
+};
+
 export const healthAPI = {
   check: () =>
     api.get('/health'),

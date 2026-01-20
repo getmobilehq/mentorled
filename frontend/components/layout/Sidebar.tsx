@@ -15,6 +15,8 @@ import {
   Target,
   Activity,
   AlertTriangle,
+  BarChart3,
+  Layers,
 } from 'lucide-react';
 
 interface NavItem {
@@ -33,6 +35,8 @@ const navigation: NavItem[] = [
   { name: 'Risk Dashboard', href: '/risk', icon: AlertTriangle },
   { name: 'Delivery', href: '/delivery', icon: Shield },
   { name: 'Placement', href: '/placement', icon: Briefcase },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+  { name: 'Bulk Operations', href: '/bulk-operations', icon: Layers },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
