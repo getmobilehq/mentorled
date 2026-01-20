@@ -25,3 +25,8 @@ apscheduler==3.10.4
 # Phase 3: Bulk Operations
 pandas==2.1.4
 openpyxl==3.1.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
