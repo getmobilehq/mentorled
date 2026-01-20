@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     # Email Settings (Phase 3)
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USER: str = "hello@mentorled.com"
-    SMTP_PASSWORD: str = "V3l0c!ty"
-    SMTP_FROM_EMAIL: str = "hello@mentorled.com"
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
     SMTP_FROM_NAME: str = "MentorLed"
     ENABLE_EMAIL: bool = False
 
