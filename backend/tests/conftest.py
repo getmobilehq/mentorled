@@ -14,7 +14,11 @@ from app.models.user import User
 from app.utils.auth import hash_password, create_access_token
 
 # Test database URL
-TEST_DATABASE_URL = "postgresql+asyncpg://mentorled:mentorled_dev@localhost:5432/mentorled_test"
+import os
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://mentorled:mentorled_dev@db:5432/mentorled_test"
+)
 
 
 @pytest.fixture(scope="session")
@@ -50,16 +54,16 @@ async def test_db():
 
 
 @pytest.fixture
-async def client(test_db):
+async def client(test_db) -> AsyncGenerator[AsyncClient, None]:
     """Create a test client."""
-    async def override_get_db():
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield test_db
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
-    
+
     app.dependency_overrides.clear()
 
 
