@@ -22,7 +22,7 @@ from app.schemas.warning import (
     WarningAcknowledgeRequest,
     WarningDraft
 )
-from app.api.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_role
 from app.agents.warning_drafter import WarningDrafter
 
 router = APIRouter(prefix="/warnings")
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/warnings")
 async def draft_warning(
     request: WarningDraftRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """
     Generate AI draft of a warning message.
@@ -135,7 +135,7 @@ async def draft_warning(
 async def create_warning(
     warning: WarningCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """Create a warning (not yet issued)."""
     # Verify fellow exists
@@ -198,7 +198,7 @@ async def update_warning(
     warning_id: UUID,
     update: WarningUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """Update warning message before issuing."""
     result = await db.execute(select(Warning).filter(Warning.id == warning_id))
@@ -223,7 +223,7 @@ async def issue_warning(
     warning_id: UUID,
     request: WarningIssueRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """Issue a warning to the fellow."""
     result = await db.execute(select(Warning).filter(Warning.id == warning_id))
@@ -294,7 +294,7 @@ async def list_warnings(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """List all warnings with optional filters."""
     query = select(Warning)

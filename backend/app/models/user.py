@@ -1,48 +1,47 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from datetime import datetime
+"""
+User model for authentication and authorization.
+"""
+from sqlalchemy import Column, String, Boolean, DateTime, Enum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
 import uuid
 import enum
 
 from app.database import Base
 
+
 class UserRole(str, enum.Enum):
-    ADMIN = "admin"
-    PROGRAM_MANAGER = "program_manager"
-    MENTOR = "mentor"
-    FELLOW = "fellow"
-    READONLY = "readonly"
+    """User roles for role-based access control"""
+    ADMIN = "admin"  # Full access to everything
+    REVIEWER = "reviewer"  # Can review AI decisions, update statuses
+    VIEWER = "viewer"  # Read-only access
+    API = "api"  # Programmatic access for external systems
+
 
 class User(Base):
+    """User model for authentication"""
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, nullable=False, index=True)
-    hashed_password = Column(String, nullable=False)
+    username = Column(String, unique=True, nullable=False, index=True)
     full_name = Column(String, nullable=False)
-    role = Column(SQLEnum(UserRole), nullable=False, default=UserRole.READONLY)
-    is_active = Column(Boolean, default=True, nullable=False)
-    is_superuser = Column(Boolean, default=False, nullable=False)
+    hashed_password = Column(String, nullable=False)
 
-    # Additional permissions (array of permission strings)
-    permissions = Column(ARRAY(String), default=list, nullable=True)
+    # Role-based access control
+    role = Column(Enum(UserRole), nullable=False, default=UserRole.VIEWER)
+
+    # Account status
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False, nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    last_login = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    last_login = Column(DateTime(timezone=True))
+
+    # API key for programmatic access (optional)
+    api_key = Column(String, unique=True, nullable=True, index=True)
 
     def __repr__(self):
-        return f"<User {self.email} ({self.role})>"
-
-    def has_permission(self, permission: str) -> bool:
-        """Check if user has a specific permission."""
-        if self.is_superuser:
-            return True
-        return permission in (self.permissions or [])
-
-    def has_role(self, *roles: UserRole) -> bool:
-        """Check if user has any of the specified roles."""
-        if self.is_superuser:
-            return True
-        return self.role in roles
+        return f"<User {self.username} ({self.role})>"

@@ -11,7 +11,7 @@ from app.models.risk_assessment import RiskAssessment
 from app.models.fellow import Fellow
 from app.models.user import User, UserRole
 from app.schemas.check_in import RiskAssessmentResponse
-from app.api.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_role
 from app.services.risk_service import RiskDetectionService
 
 router = APIRouter(prefix="/risk")
@@ -22,7 +22,7 @@ async def assess_fellow_risk(
     fellow_id: UUID,
     week: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """
     Perform risk assessment for a fellow at a specific week.
@@ -101,7 +101,7 @@ async def get_risk_dashboard(
     cohort_id: UUID,
     week: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """Get risk dashboard for a cohort."""
     risk_service = RiskDetectionService(db)
@@ -132,7 +132,7 @@ async def record_action_taken(
     assessment_id: UUID,
     action: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """Record action taken on a risk assessment."""
     result = await db.execute(
@@ -158,7 +158,7 @@ async def get_assessments_by_week(
     week: int,
     cohort_id: UUID = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """Get all risk assessments for a specific week."""
     query = select(RiskAssessment).filter(RiskAssessment.week == week)

@@ -16,7 +16,7 @@ from app.schemas.check_in import (
     CheckInAnalysisResponse,
     CheckInAnalysis
 )
-from app.api.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_role
 from app.agents.check_in_analyzer import CheckInAnalyzer
 
 router = APIRouter(prefix="/check-ins")
@@ -94,7 +94,7 @@ async def list_check_ins(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """List all check-ins with optional filters."""
     query = select(CheckIn)
@@ -116,7 +116,7 @@ async def list_check_ins(
 async def analyze_check_in(
     check_in_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """Trigger AI analysis of a check-in."""
     # Get check-in and fellow
@@ -179,7 +179,7 @@ async def analyze_check_in(
 async def get_check_ins_by_week(
     week: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
     """Get all check-ins for a specific week."""
     result = await db.execute(

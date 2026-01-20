@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api import screening, applicants, cohorts, fellows, delivery, placement, auth, microship, check_ins, risk, warnings, bulk, analytics
+from app.api import screening, applicants, cohorts, fellows, delivery, placement, microship, check_ins, risk, warnings, bulk, analytics, auth
 
 api_router = APIRouter()
 
