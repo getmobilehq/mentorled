@@ -78,10 +78,15 @@ app.add_middleware(
     CORSMiddleware,
     # Allow requests from these origins (configured via environment variable)
     # Defaults: ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
-    allow_origins=settings.CORS_ORIGINS,
+    # Allow requests from these origins
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:3003",
+    ],
 
     # Allow cookies and authorization headers to be sent cross-origin
-    # Set to False if you're only using Authorization header (not cookies)
     allow_credentials=True,
 
     # Allow all HTTP methods (GET, POST, PUT, DELETE, OPTIONS, etc.)
