@@ -1,10 +1,10 @@
 """Challenge management API endpoints."""
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select, func as sqlfunc, cast, Date
 from uuid import UUID
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.models.challenge import Challenge, ChallengeStatus
@@ -25,6 +25,7 @@ from app.schemas.challenge import (
 from app.agents.challenge_generator import challenge_generator
 from app.utils.email import email_service
 from app.services.auto_evaluate import run_auto_evaluation
+from app.services.applicant_status import update_applicant_status_on_event
 
 router = APIRouter(prefix="/challenges")
 
@@ -275,6 +276,7 @@ async def get_challenge_analytics(
             "average_score": 0,
             "on_time_rate": 0,
             "per_challenge": [],
+            "submissions_by_day": [],
         }
 
     # Query all submissions for these challenges
@@ -337,6 +339,19 @@ async def get_challenge_analytics(
             "pass_rate": round(c_pass / len(c_evaluated) * 100, 1) if c_evaluated else 0,
         })
 
+    # Submissions by day (last 14 days)
+    fourteen_days_ago = datetime.utcnow() - timedelta(days=14)
+    submissions_by_day = []
+    daily_counts: dict = {}
+    for s in all_submissions:
+        if s.submitted_at and s.submitted_at >= fourteen_days_ago:
+            day_str = s.submitted_at.strftime("%Y-%m-%d")
+            daily_counts[day_str] = daily_counts.get(day_str, 0) + 1
+    # Fill in all 14 days (including zeros)
+    for i in range(14):
+        day = (fourteen_days_ago + timedelta(days=i + 1)).strftime("%Y-%m-%d")
+        submissions_by_day.append({"date": day, "count": daily_counts.get(day, 0)})
+
     return {
         "total_challenges": len(all_challenges),
         "total_submissions": total_subs,
@@ -348,6 +363,7 @@ async def get_challenge_analytics(
         "average_score": round(avg_score, 2),
         "on_time_rate": round(on_time_rate, 1),
         "per_challenge": per_challenge,
+        "submissions_by_day": submissions_by_day,
     }
 
 
@@ -489,6 +505,9 @@ async def public_submit(
     db.add(new_submission)
     await db.commit()
     await db.refresh(new_submission)
+
+    # Auto-progress applicant status on submission
+    await update_applicant_status_on_event(db, applicant.id, "submission")
 
     # Send confirmation email
     background_tasks.add_task(

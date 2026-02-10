@@ -8,6 +8,8 @@ from app.database import AsyncSessionLocal
 from app.models.applicant import Applicant
 from app.models.microship import MicroshipSubmission
 from app.agents.microship_evaluator import MicroshipEvaluator
+from app.utils.email import EmailService
+from app.services.applicant_status import update_applicant_status_on_event
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,30 @@ async def run_auto_evaluation(submission_id: UUID):
             outcome = evaluation.get("outcome", "unknown")
             score = evaluation.get("weighted_score", 0)
             logger.info(f"Auto-evaluation complete for submission {submission_id}: {outcome} ({score}/4.0)")
+
+            # Auto-progress applicant status
+            await update_applicant_status_on_event(db, applicant.id, "evaluation")
+
+            # Send evaluation result email
+            try:
+                OUTCOME_MAP = {
+                    "progress": "eligible",
+                    "borderline": "under review",
+                    "do_not_progress": "not eligible",
+                }
+                email_svc = EmailService()
+                await email_svc.send_evaluation_result(
+                    applicant_email=applicant.email,
+                    applicant_name=applicant.name,
+                    overall_score=round(score * 25, 1),
+                    eligibility=OUTCOME_MAP.get(outcome, outcome),
+                    reasoning=evaluation.get("reasoning", ""),
+                    strengths=evaluation.get("strengths"),
+                    concerns=evaluation.get("concerns"),
+                    confidence=evaluation.get("confidence"),
+                )
+            except Exception as email_err:
+                logger.error(f"Failed to send eval result email for submission {submission_id}: {email_err}")
 
         except Exception as e:
             logger.error(f"Auto-evaluation failed for submission {submission_id}: {str(e)}")

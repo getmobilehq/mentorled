@@ -359,6 +359,10 @@ export interface ChallengeAnalytics {
     average_score: number;
     pass_rate: number;
   }>;
+  submissions_by_day?: Array<{
+    date: string;
+    count: number;
+  }>;
 }
 
 // Journey types

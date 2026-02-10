@@ -1,5 +1,5 @@
 """Microship Challenge API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
@@ -18,6 +18,8 @@ from app.schemas.microship import (
     MicroshipEvaluationResponse
 )
 from app.agents.microship_evaluator import MicroshipEvaluator
+from app.utils.email import email_service
+from app.services.applicant_status import update_applicant_status_on_event
 
 router = APIRouter()
 
@@ -107,6 +109,7 @@ async def get_applicant_submissions(
 @router.post("/evaluate/{submission_id}", response_model=MicroshipEvaluationResponse)
 async def evaluate_submission(
     submission_id: UUID,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     # TEMPORARY: Auth disabled until Phase 4
     # current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.PROGRAM_MANAGER))
@@ -177,6 +180,29 @@ async def evaluate_submission(
         submission.raw_analysis = evaluation
         await db.commit()
         await db.refresh(submission)
+
+        # Auto-progress applicant status
+        await update_applicant_status_on_event(db, applicant.id, "evaluation")
+
+        # Send evaluation result email
+        outcome = evaluation.get("outcome", "unknown")
+        score = evaluation.get("weighted_score", 0)
+        OUTCOME_MAP = {
+            "progress": "eligible",
+            "borderline": "under review",
+            "do_not_progress": "not eligible",
+        }
+        background_tasks.add_task(
+            email_service.send_evaluation_result,
+            applicant_email=applicant.email,
+            applicant_name=applicant.name,
+            overall_score=round(score * 25, 1),
+            eligibility=OUTCOME_MAP.get(outcome, outcome),
+            reasoning=evaluation.get("reasoning", ""),
+            strengths=evaluation.get("strengths"),
+            concerns=evaluation.get("concerns"),
+            confidence=evaluation.get("confidence"),
+        )
 
         return {
             "submission_id": str(submission.id),

@@ -32,6 +32,7 @@ import {
   XCircle,
   AlertTriangle,
   Pencil,
+  Download,
 } from 'lucide-react';
 import type { Challenge, ChallengeSubmission, ChallengeAnalytics, Cohort, TrackConfig, TrackSummary } from '@/types';
 
@@ -121,9 +122,43 @@ export default function ChallengesPage() {
   // Copy feedback
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Deadline countdown
+  const [countdowns, setCountdowns] = useState<Record<string, { text: string; color: string }>>({});
+
+  const computeCountdowns = useCallback((challengeList: Challenge[]) => {
+    const now = new Date();
+    const result: Record<string, { text: string; color: string }> = {};
+    for (const c of challengeList) {
+      if (c.status !== 'active' || !c.deadline) continue;
+      const deadline = new Date(c.deadline);
+      const diffMs = deadline.getTime() - now.getTime();
+      if (diffMs <= 0) {
+        result[c.id] = { text: 'Deadline passed', color: 'text-gray-400' };
+      } else {
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const days = Math.floor(hours / 24);
+        if (hours > 48) {
+          result[c.id] = { text: `${days} days left`, color: 'text-green-600' };
+        } else if (hours >= 24) {
+          result[c.id] = { text: `${hours} hours left`, color: 'text-yellow-600' };
+        } else {
+          result[c.id] = { text: `${hours} hours left`, color: 'text-red-600' };
+        }
+      }
+    }
+    setCountdowns(result);
+  }, []);
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Update countdowns every 60 seconds
+  useEffect(() => {
+    computeCountdowns(challenges);
+    const interval = setInterval(() => computeCountdowns(challenges), 60000);
+    return () => clearInterval(interval);
+  }, [challenges, computeCountdowns]);
 
   useEffect(() => {
     if (selectedCohortId && viewMode === 'track') {
@@ -319,6 +354,32 @@ export default function ChallengesPage() {
 
     setBulkEvaluating(false);
     setBulkProgress(null);
+  };
+
+  // CSV export for submissions
+  const handleExportCSV = () => {
+    if (submissions.length === 0) return;
+    const headers = ['Name', 'Email', 'Submission URL', 'Type', 'Submitted At', 'On Time', 'Score', 'Outcome'];
+    const rows = submissions.map(sub => [
+      sub.applicant_name,
+      sub.applicant_email,
+      sub.submission_url || '',
+      sub.submission_type || '',
+      sub.submitted_at ? new Date(sub.submitted_at).toISOString() : '',
+      sub.on_time ? 'Yes' : 'No',
+      sub.evaluation?.weighted_score != null ? sub.evaluation.weighted_score.toFixed(2) : '',
+      sub.evaluation?.outcome || 'Pending',
+    ]);
+    const csv = [headers, ...rows].map(row =>
+      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `submissions-${selectedChallenge?.title?.replace(/\s+/g, '-').toLowerCase() || 'export'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const addRequirement = () => {
@@ -584,6 +645,38 @@ export default function ChallengesPage() {
                 </div>
               </Card>
             </div>
+          )}
+
+          {/* Submission Timeline */}
+          {analytics && analytics.submissions_by_day && analytics.submissions_by_day.some(d => d.count > 0) && (
+            <Card>
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Submission Activity (Last 14 Days)</h3>
+                <div className="flex items-end gap-1" style={{ height: '80px' }}>
+                  {(() => {
+                    const maxCount = Math.max(...analytics.submissions_by_day.map(d => d.count), 1);
+                    return analytics.submissions_by_day.map((day) => (
+                      <div
+                        key={day.date}
+                        className="flex-1 flex flex-col items-center gap-1"
+                      >
+                        {day.count > 0 && (
+                          <span className="text-xs text-gray-500">{day.count}</span>
+                        )}
+                        <div
+                          className={`w-full rounded-t ${day.count > 0 ? 'bg-green-500' : 'bg-gray-100'}`}
+                          style={{ height: `${Math.max((day.count / maxCount) * 60, day.count > 0 ? 4 : 2)}px` }}
+                          title={`${day.date}: ${day.count} submission${day.count !== 1 ? 's' : ''}`}
+                        />
+                        <span className="text-[10px] text-gray-400 rotate-[-45deg] origin-top-left whitespace-nowrap">
+                          {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+            </Card>
           )}
 
           {/* Controls: Cohort selector + View toggle + Filter tabs */}
@@ -886,6 +979,11 @@ export default function ChallengesPage() {
                                 })}
                               </span>
                             </span>
+                            {countdowns[challenge.id] && (
+                              <span className={`font-medium ${countdowns[challenge.id].color}`}>
+                                {countdowns[challenge.id].text}
+                              </span>
+                            )}
                             {challenge.submission_types.length > 0 && (
                               <span>
                                 Types: {challenge.submission_types.join(', ')}
@@ -1327,6 +1425,14 @@ export default function ChallengesPage() {
               </div>
             ) : (
               <div className="space-y-4">
+                {/* Export CSV */}
+                <div className="flex justify-end">
+                  <Button size="sm" variant="secondary" onClick={handleExportCSV}>
+                    <Download className="mr-1 h-3 w-3" />
+                    Export CSV
+                  </Button>
+                </div>
+
                 {/* Bulk evaluate bar */}
                 {(() => {
                   const unevaluatedCount = submissions.filter(s => !s.has_evaluation).length;
