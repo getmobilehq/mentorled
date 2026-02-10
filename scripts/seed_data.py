@@ -19,7 +19,10 @@ from app.models.cohort import Cohort
 from app.models.mentor import Mentor
 from app.models.applicant import Applicant
 from app.models.microship import MicroshipSubmission
+from app.models.challenge import Challenge
+from app.models.challenge_track_config import ChallengeTrackConfig
 from app.models.team import Team
+import secrets
 
 async def seed_database():
     """Seed the database with sample data."""
@@ -202,6 +205,115 @@ async def seed_database():
             db.add(microship)
             print(f"✓ Created microship submission for {applicants[2].name}")
 
+            # Create track configs
+            backend_track = ChallengeTrackConfig(
+                cohort_id=cohort.id,
+                role_type="backend",
+                total_challenges=3,
+            )
+            designer_track = ChallengeTrackConfig(
+                cohort_id=cohort.id,
+                role_type="product_designer",
+                total_challenges=2,
+            )
+            frontend_track = ChallengeTrackConfig(
+                cohort_id=cohort.id,
+                role_type="frontend",
+                total_challenges=3,
+            )
+            db.add_all([backend_track, designer_track, frontend_track])
+            await db.flush()
+            print(f"✓ Created 3 track configs (Backend: 3, Product Designer: 2, Frontend: 3)")
+
+            # Create sample challenges linked to tracks
+            challenges = [
+                Challenge(
+                    cohort_id=cohort.id,
+                    title="Backend API Challenge",
+                    description="Build a RESTful API for a task management system. The API should support CRUD operations for tasks, user authentication, and proper error handling. Use Python/FastAPI or Node.js/Express.",
+                    requirements=[
+                        "Implement CRUD endpoints for tasks (create, read, update, delete)",
+                        "Add user authentication with JWT tokens",
+                        "Include input validation and error handling",
+                        "Write at least 3 unit tests",
+                        "Provide a README with setup instructions",
+                    ],
+                    role_type="backend",
+                    submission_types=["github"],
+                    deadline=datetime.now() + timedelta(days=7),
+                    status="active",
+                    share_token=secrets.token_urlsafe(32),
+                    track_config_id=backend_track.id,
+                    sequence_number=1,
+                    duration_hours=24,
+                ),
+                Challenge(
+                    cohort_id=cohort.id,
+                    title="Database Design Challenge",
+                    description="Design and implement a database schema for an e-commerce platform. Include proper normalization, indexing strategies, and write migration scripts.",
+                    requirements=[
+                        "Design an ER diagram with at least 6 tables",
+                        "Write SQL migration scripts",
+                        "Include sample seed data",
+                        "Document indexing strategy",
+                    ],
+                    role_type="backend",
+                    submission_types=["github"],
+                    deadline=datetime.now() + timedelta(days=5),
+                    status="draft",
+                    share_token=secrets.token_urlsafe(32),
+                    track_config_id=backend_track.id,
+                    sequence_number=2,
+                    duration_hours=36,
+                ),
+                Challenge(
+                    cohort_id=cohort.id,
+                    title="Product Design Challenge",
+                    description="Design a mobile-first onboarding flow for a fitness tracking app. Create high-fidelity mockups for at least 5 screens covering signup, goal setting, and the main dashboard.",
+                    requirements=[
+                        "Create a user flow diagram",
+                        "Design at least 5 high-fidelity screens",
+                        "Include a style guide (colors, typography, components)",
+                        "Write brief UX rationale for key decisions",
+                        "Export as Figma link or PDF",
+                    ],
+                    role_type="product_designer",
+                    submission_types=["figma", "document"],
+                    deadline=datetime.now() + timedelta(days=5),
+                    status="active",
+                    share_token=secrets.token_urlsafe(32),
+                    track_config_id=designer_track.id,
+                    sequence_number=1,
+                    duration_hours=24,
+                ),
+                Challenge(
+                    cohort_id=cohort.id,
+                    title="Frontend Dashboard Challenge",
+                    description="Build a responsive dashboard component using React/Next.js and Tailwind CSS. The dashboard should display sample data with charts, tables, and filtering capabilities.",
+                    requirements=[
+                        "Use React or Next.js with TypeScript",
+                        "Style with Tailwind CSS",
+                        "Include at least one chart/visualization",
+                        "Implement responsive design (mobile + desktop)",
+                        "Add data filtering functionality",
+                    ],
+                    role_type="frontend",
+                    submission_types=["github"],
+                    deadline=datetime.now() + timedelta(days=7),
+                    status="active",
+                    share_token=secrets.token_urlsafe(32),
+                    track_config_id=frontend_track.id,
+                    sequence_number=1,
+                    duration_hours=12,
+                ),
+            ]
+            db.add_all(challenges)
+            await db.flush()
+            print(f"✓ Created {len(challenges)} challenges (with track assignments)")
+
+            # Link Kevin's microship to a challenge
+            microship.challenge_ref = challenges[0].id
+
             await db.commit()
             print("\n✅ Database seeded successfully!")
             print(f"\n📊 Summary:")
@@ -210,6 +322,14 @@ async def seed_database():
             print(f"   - Teams: {len(teams)}")
             print(f"   - Applicants: {len(applicants)}")
             print(f"   - Microship Submissions: 1")
+            print(f"   - Track Configs: 3 (Backend: 3, Product Designer: 2, Frontend: 3)")
+            print(f"   - Challenges: {len(challenges)}")
+            for c in challenges:
+                seq_info = f" [#{c.sequence_number}]" if c.sequence_number else ""
+                dur_info = f" ({c.duration_hours}h)" if c.duration_hours else ""
+                print(f"     [{c.status}]{seq_info}{dur_info} {c.title}")
+                if c.status == 'active':
+                    print(f"       Link: /submit/{c.share_token}")
             print(f"\n🚀 You can now test the screening agent with these applicants!")
 
         except Exception as e:

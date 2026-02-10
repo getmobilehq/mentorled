@@ -2,13 +2,12 @@
 
 import React from 'react';
 import { Card } from '@/components/ui/Card';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Settings } from 'lucide-react';
 
 export default function SettingsPage() {
   return (
-    <ProtectedRoute>
+
       <AppLayout>
         <div className="space-y-6">
       <div>
@@ -29,6 +28,6 @@ export default function SettingsPage() {
       </Card>
         </div>
       </AppLayout>
-    </ProtectedRoute>
+
   );
 }

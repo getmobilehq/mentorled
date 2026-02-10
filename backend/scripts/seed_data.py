@@ -37,7 +37,10 @@ from app.models.check_in import CheckIn
 from app.models.milestone import Milestone
 from app.models.warning import Warning
 from app.models.risk_assessment import RiskAssessment
+from app.models.challenge import Challenge
+from app.models.challenge_track_config import ChallengeTrackConfig
 from app.core.security import get_password_hash
+import secrets
 
 
 # Sample data pools
@@ -534,6 +537,144 @@ async def create_risk_assessments(db: AsyncSession, fellows: list[Fellow], curre
     return assessments
 
 
+async def create_challenges(db: AsyncSession, cohort: Cohort) -> list[Challenge]:
+    """Create sample challenges with track configs."""
+    print("\nCreating track configs and challenges...")
+
+    # Create track configs
+    backend_track = ChallengeTrackConfig(
+        id=uuid4(),
+        cohort_id=cohort.id,
+        role_type="backend",
+        total_challenges=3,
+    )
+    designer_track = ChallengeTrackConfig(
+        id=uuid4(),
+        cohort_id=cohort.id,
+        role_type="product_designer",
+        total_challenges=2,
+    )
+    frontend_track = ChallengeTrackConfig(
+        id=uuid4(),
+        cohort_id=cohort.id,
+        role_type="frontend",
+        total_challenges=3,
+    )
+    db.add_all([backend_track, designer_track, frontend_track])
+    await db.commit()
+    await db.refresh(backend_track)
+    await db.refresh(designer_track)
+    await db.refresh(frontend_track)
+    print(f"✓ Created 3 track configs (Backend: 3, Product Designer: 2, Frontend: 3)")
+
+    challenge_data = [
+        {
+            "title": "Backend API Challenge",
+            "description": "Build a RESTful API for a task management system. The API should support CRUD operations for tasks, user authentication, and proper error handling. Use Python/FastAPI or Node.js/Express.",
+            "requirements": [
+                "Implement CRUD endpoints for tasks (create, read, update, delete)",
+                "Add user authentication with JWT tokens",
+                "Include input validation and error handling",
+                "Write at least 3 unit tests",
+                "Provide a README with setup instructions",
+            ],
+            "role_type": "backend",
+            "submission_types": ["github"],
+            "deadline": datetime.utcnow() + timedelta(days=7),
+            "status": "active",
+            "track_config_id": backend_track.id,
+            "sequence_number": 1,
+            "duration_hours": 24,
+        },
+        {
+            "title": "Database Design Challenge",
+            "description": "Design and implement a database schema for an e-commerce platform. Include proper normalization, indexing strategies, and write migration scripts.",
+            "requirements": [
+                "Design an ER diagram with at least 6 tables",
+                "Write SQL migration scripts",
+                "Include sample seed data",
+                "Document indexing strategy",
+            ],
+            "role_type": "backend",
+            "submission_types": ["github"],
+            "deadline": datetime.utcnow() + timedelta(days=5),
+            "status": "draft",
+            "track_config_id": backend_track.id,
+            "sequence_number": 2,
+            "duration_hours": 36,
+        },
+        {
+            "title": "Product Design Challenge",
+            "description": "Design a mobile-first onboarding flow for a fitness tracking app. Create high-fidelity mockups for at least 5 screens covering signup, goal setting, and the main dashboard.",
+            "requirements": [
+                "Create a user flow diagram",
+                "Design at least 5 high-fidelity screens",
+                "Include a style guide (colors, typography, components)",
+                "Write brief UX rationale for key decisions",
+                "Export as Figma link or PDF",
+            ],
+            "role_type": "product_designer",
+            "submission_types": ["figma", "document"],
+            "deadline": datetime.utcnow() + timedelta(days=5),
+            "status": "active",
+            "track_config_id": designer_track.id,
+            "sequence_number": 1,
+            "duration_hours": 24,
+        },
+        {
+            "title": "Frontend Dashboard Challenge",
+            "description": "Build a responsive dashboard component using React/Next.js and Tailwind CSS. The dashboard should display sample data with charts, tables, and filtering capabilities.",
+            "requirements": [
+                "Use React or Next.js with TypeScript",
+                "Style with Tailwind CSS",
+                "Include at least one chart/visualization",
+                "Implement responsive design (mobile + desktop)",
+                "Add data filtering functionality",
+            ],
+            "role_type": "frontend",
+            "submission_types": ["github"],
+            "deadline": datetime.utcnow() + timedelta(days=7),
+            "status": "active",
+            "track_config_id": frontend_track.id,
+            "sequence_number": 1,
+            "duration_hours": 12,
+        },
+    ]
+
+    challenges = []
+    for data in challenge_data:
+        challenge = Challenge(
+            id=uuid4(),
+            cohort_id=cohort.id,
+            title=data["title"],
+            description=data["description"],
+            requirements=data["requirements"],
+            role_type=data["role_type"],
+            submission_types=data["submission_types"],
+            deadline=data["deadline"],
+            status=data["status"],
+            share_token=secrets.token_urlsafe(32),
+            track_config_id=data.get("track_config_id"),
+            sequence_number=data.get("sequence_number"),
+            duration_hours=data.get("duration_hours"),
+        )
+        challenges.append(challenge)
+
+    db.add_all(challenges)
+    await db.commit()
+
+    for c in challenges:
+        await db.refresh(c)
+
+    print(f"✓ Created {len(challenges)} challenges (with track assignments)")
+    for c in challenges:
+        seq_info = f" [#{c.sequence_number}]" if c.sequence_number else ""
+        dur_info = f" ({c.duration_hours}h)" if c.duration_hours else ""
+        print(f"  - {c.title} [{c.status}]{seq_info}{dur_info} token={c.share_token[:16]}...")
+
+    return challenges
+
+
 async def main():
     """Main seeding function."""
     print("=" * 60)
@@ -570,6 +711,9 @@ async def main():
             # 8. Risk assessments
             assessments = await create_risk_assessments(db, fellows, current_week=8)
 
+            # 9. Challenges
+            challenges = await create_challenges(db, current_cohort)
+
             print("\n" + "=" * 60)
             print("✅ SEEDING COMPLETE!")
             print("=" * 60)
@@ -584,6 +728,7 @@ Summary:
   - Milestones: {len(milestones)}
   - Warnings: {len(warnings)}
   - Risk Assessments: {len(assessments)}
+  - Challenges: {len(challenges)}
 
 Next Steps:
   1. Start backend: cd backend && uvicorn app.main:app --reload
@@ -596,6 +741,7 @@ Next Steps:
      - /check-ins - Weekly check-in analysis
      - /risk - Risk dashboard with live data
      - /warnings - Warning workflow system
+     - /challenges - Create & manage challenges
 
 The platform is now ready for demo! 🎉
             """)

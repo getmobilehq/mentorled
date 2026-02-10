@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>New Challenge Available</h1>
+
+<p>Dear {{ applicant_name }},</p>
+
+<p>A new Microship challenge has been activated and is ready for your submission.</p>
+
+<div class="highlight">
+    <h2 style="margin-top: 0;">{{ challenge_title }}</h2>
+    <p>{{ challenge_description }}</p>
+
+    {% if role_type and role_type != 'all' %}
+    <p><strong>Role:</strong> <span class="badge badge-info">{{ role_type | replace("_", " ") | title }}</span></p>
+    {% endif %}
+
+    {% if duration_hours %}
+    <p><strong>Duration:</strong> {{ duration_hours }} hours</p>
+    {% endif %}
+
+    <p><strong>Deadline:</strong> {{ deadline }}</p>
+</div>
+
+{% if requirements and requirements|length > 0 %}
+<h2>Requirements</h2>
+<ul>
+    {% for req in requirements %}
+    <li>{{ req }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+<p style="text-align: center; margin-top: 30px;">
+    <a href="{{ submission_url }}" class="button">View &amp; Submit Challenge</a>
+</p>
+
+<p>Make sure to submit your work before the deadline. Late submissions may not be accepted.</p>
+
+<p>
+    Best regards,<br>
+    The MentorLed Team
+</p>
+{% endblock %}

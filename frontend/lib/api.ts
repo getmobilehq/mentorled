@@ -217,6 +217,52 @@ export const bulkAPI = {
     }),
 };
 
+export const trackConfigsAPI = {
+  list: (cohortId: string) =>
+    api.get('/api/track-configs/', { params: { cohort_id: cohortId } }),
+  get: (id: string) =>
+    api.get(`/api/track-configs/${id}`),
+  create: (data: { cohort_id: string; role_type: string; total_challenges: number }) =>
+    api.post('/api/track-configs/', data),
+  update: (id: string, data: { total_challenges: number }) =>
+    api.put(`/api/track-configs/${id}`, data),
+  delete: (id: string) =>
+    api.delete(`/api/track-configs/${id}`),
+  getCohortSummary: (cohortId: string) =>
+    api.get(`/api/track-configs/cohort/${cohortId}/summary`),
+};
+
+export const challengesAPI = {
+  list: (cohortId?: string, status?: string) =>
+    api.get('/api/challenges/', { params: { cohort_id: cohortId, status_filter: status } }),
+  get: (id: string) =>
+    api.get(`/api/challenges/${id}`),
+  create: (data: any) =>
+    api.post('/api/challenges/', data),
+  update: (id: string, data: any) =>
+    api.put(`/api/challenges/${id}`, data),
+  updateStatus: (id: string, status: string) =>
+    api.patch(`/api/challenges/${id}/status`, { status }),
+  getSubmissions: (id: string) =>
+    api.get(`/api/challenges/${id}/submissions`),
+  getPublic: (shareToken: string) =>
+    api.get(`/api/challenges/public/${shareToken}`),
+  submitPublic: (shareToken: string, data: any) =>
+    api.post(`/api/challenges/public/${shareToken}/submit`, data),
+  generateContent: (data: {
+    role_type: string;
+    duration_hours?: number | null;
+    sequence_number?: number | null;
+    total_in_track?: number | null;
+    track_config_id?: string | null;
+    existing_title?: string;
+    existing_description?: string;
+  }) =>
+    api.post('/api/challenges/generate-content', data),
+  getAnalytics: (cohortId?: string) =>
+    api.get('/api/challenges/analytics', { params: { cohort_id: cohortId } }),
+};
+
 export const healthAPI = {
   check: () =>
     api.get('/health'),

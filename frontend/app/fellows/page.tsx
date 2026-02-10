@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { fellowsAPI, deliveryAPI } from '@/lib/api';
 import {
@@ -97,18 +96,18 @@ export default function FellowsPage() {
 
   if (loading) {
     return (
-      <ProtectedRoute>
+
         <AppLayout>
           <div className="flex items-center justify-center h-full">
             <div className="text-gray-500">Loading...</div>
           </div>
         </AppLayout>
-      </ProtectedRoute>
+
     );
   }
 
   return (
-    <ProtectedRoute>
+
       <AppLayout>
         <div className="space-y-6">
         {/* Page header */}
@@ -407,6 +406,6 @@ export default function FellowsPage() {
       </Modal>
         </div>
       </AppLayout>
-    </ProtectedRoute>
+
   );
 }

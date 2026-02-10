@@ -260,3 +260,117 @@ export interface MicroshipEvaluationResponse {
   evaluation: MicroshipEvaluationResult;
   evaluated_at: string;
 }
+
+// Challenge types
+export type ChallengeStatus = 'draft' | 'active' | 'closed' | 'archived';
+
+export interface TrackConfig {
+  id: string;
+  cohort_id: string;
+  role_type: string;
+  total_challenges: number;
+  challenges_created: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrackSummary extends TrackConfig {
+  challenges: Array<{
+    id: string;
+    title: string;
+    description: string;
+    status: ChallengeStatus;
+    sequence_number: number | null;
+    duration_hours: number | null;
+    deadline: string;
+    share_token: string;
+    role_type: string;
+    submission_types: string[];
+    requirements: string[];
+  }>;
+}
+
+export interface Challenge {
+  id: string;
+  cohort_id?: string | null;
+  title: string;
+  description: string;
+  requirements: string[];
+  role_type: string;
+  submission_types: string[];
+  deadline: string;
+  status: ChallengeStatus;
+  share_token: string;
+  created_by?: string | null;
+  duration_hours?: number | null;
+  sequence_number?: number | null;
+  track_config_id?: string | null;
+  total_in_track?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChallengePublic {
+  id: string;
+  title: string;
+  description: string;
+  requirements: string[];
+  role_type: string;
+  submission_types: string[];
+  deadline: string;
+  status: ChallengeStatus;
+  sequence_number?: number | null;
+  total_in_track?: number | null;
+  duration_hours?: number | null;
+}
+
+export interface ChallengeSubmission {
+  id: string;
+  applicant_id: string;
+  applicant_name: string;
+  applicant_email: string;
+  submission_url?: string;
+  submission_type?: string;
+  submitted_at?: string;
+  on_time?: boolean;
+  has_evaluation: boolean;
+  evaluation?: MicroshipEvaluationResult | null;
+  created_at: string;
+}
+
+export interface ChallengeAnalytics {
+  total_challenges: number;
+  total_submissions: number;
+  total_evaluated: number;
+  pending_evaluation: number;
+  pass_rate: number;
+  borderline_rate: number;
+  fail_rate: number;
+  average_score: number;
+  on_time_rate: number;
+  per_challenge: Array<{
+    challenge_id: string;
+    title: string;
+    status: string;
+    role_type: string;
+    submission_count: number;
+    evaluated_count: number;
+    average_score: number;
+    pass_rate: number;
+  }>;
+}
+
+export interface PublicSubmissionCreate {
+  email: string;
+  name: string;
+  submission_url: string;
+  submission_type: string;
+  notes?: string;
+}
+
+export interface PublicSubmissionResponse {
+  message: string;
+  submission_id: string;
+  challenge_title: string;
+  submitted_at: string;
+}

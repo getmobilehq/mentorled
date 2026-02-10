@@ -9,7 +9,6 @@ import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { Pagination } from '@/components/ui/Pagination';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { applicantsAPI } from '@/lib/api';
 import { ExternalLink, Mail } from 'lucide-react';
@@ -96,7 +95,7 @@ function ApplicantsPageContent() {
   ];
 
   return (
-    <ProtectedRoute>
+
       <AppLayout>
         {loading ? (
           <div className="space-y-6">
@@ -276,7 +275,7 @@ function ApplicantsPageContent() {
         </div>
         )}
       </AppLayout>
-    </ProtectedRoute>
+
   );
 }
 

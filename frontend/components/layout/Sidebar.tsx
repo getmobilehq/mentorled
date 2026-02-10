@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   BarChart3,
   Layers,
+  Flag,
 } from 'lucide-react';
 
 interface NavItem {
@@ -29,14 +30,15 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Screening', href: '/screening', icon: ClipboardCheck },
   { name: 'Applicants', href: '/applicants', icon: Users },
+  { name: 'Challenges', href: '/challenges', icon: Flag },
   { name: 'Microship', href: '/microship', icon: Target },
   { name: 'Fellows', href: '/fellows', icon: TrendingUp },
   { name: 'Check-ins', href: '/check-ins', icon: Activity },
   { name: 'Risk Dashboard', href: '/risk', icon: AlertTriangle },
   { name: 'Delivery', href: '/delivery', icon: Shield },
-  { name: 'Placement', href: '/placement', icon: Briefcase },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Bulk Operations', href: '/bulk-operations', icon: Layers },
+  { name: 'Placement', href: '/placement', icon: Briefcase },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -87,6 +89,11 @@ export const Sidebar: React.FC = () => {
                 `}
               />
               {item.name}
+              {item.name === 'Placement' && (
+                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-500">
+                  Soon
+                </span>
+              )}
             </Link>
           );
         })}

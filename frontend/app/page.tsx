@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { applicantsAPI, screeningAPI, healthAPI } from '@/lib/api';
 import {
@@ -80,7 +79,7 @@ export default function Dashboard() {
   const recentApplicants = applicants.slice(0, 5);
 
   return (
-    <ProtectedRoute>
+
       <AppLayout>
         {loading ? (
           <div className="flex items-center justify-center h-full">
@@ -224,6 +223,6 @@ export default function Dashboard() {
         </div>
         )}
       </AppLayout>
-    </ProtectedRoute>
+
   );
 }

@@ -208,6 +208,60 @@ class EmailService:
 
         return success
 
+    async def send_challenge_activated(
+        self,
+        applicant_email: str,
+        applicant_name: str,
+        challenge_title: str,
+        challenge_description: str,
+        role_type: str,
+        deadline: str,
+        submission_url: str,
+        duration_hours: Optional[int] = None,
+        requirements: Optional[List[str]] = None,
+    ) -> bool:
+        """Send notification when a challenge is activated."""
+        subject = f"MentorLed: New Challenge Available - {challenge_title}"
+        context = {
+            "applicant_name": applicant_name,
+            "challenge_title": challenge_title,
+            "challenge_description": challenge_description,
+            "role_type": role_type,
+            "deadline": deadline,
+            "submission_url": submission_url,
+            "duration_hours": duration_hours,
+            "requirements": requirements or [],
+        }
+        return await self.send_email(
+            to_email=applicant_email,
+            subject=subject,
+            template_name="challenge_activated.html",
+            context=context,
+        )
+
+    async def send_submission_confirmation(
+        self,
+        applicant_email: str,
+        applicant_name: str,
+        challenge_title: str,
+        submitted_at: str,
+        on_time: bool,
+    ) -> bool:
+        """Send confirmation after challenge submission."""
+        subject = f"MentorLed: Submission Received - {challenge_title}"
+        context = {
+            "applicant_name": applicant_name,
+            "challenge_title": challenge_title,
+            "submitted_at": submitted_at,
+            "on_time": on_time,
+        }
+        return await self.send_email(
+            to_email=applicant_email,
+            subject=subject,
+            template_name="submission_confirmation.html",
+            context=context,
+        )
+
 
 # Global email service instance
 email_service = EmailService()

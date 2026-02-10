@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { analyticsAPI } from '@/lib/api';
 import {
@@ -101,18 +100,18 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <ProtectedRoute>
+
         <AppLayout>
           <div className="flex items-center justify-center h-full">
             <div className="text-gray-500">Loading analytics...</div>
           </div>
         </AppLayout>
-      </ProtectedRoute>
+
     );
   }
 
   return (
-    <ProtectedRoute>
+
       <AppLayout>
         <div className="space-y-6">
           {/* Page header */}
@@ -373,6 +372,6 @@ export default function AnalyticsPage() {
           )}
         </div>
       </AppLayout>
-    </ProtectedRoute>
+
   );
 }

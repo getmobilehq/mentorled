@@ -2,7 +2,7 @@ import React from 'react';
 
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'secondary';
   className?: string;
 }
 
@@ -17,6 +17,7 @@ export const Badge: React.FC<BadgeProps> = ({
     warning: 'bg-yellow-100 text-yellow-800',
     danger: 'bg-red-100 text-red-800',
     info: 'bg-blue-100 text-blue-800',
+    secondary: 'bg-gray-100 text-gray-600',
   };
 
   return (
@@ -29,8 +30,8 @@ export const Badge: React.FC<BadgeProps> = ({
 };
 
 // Helper function to get badge variant based on status
-export const getStatusBadgeVariant = (status: string): 'default' | 'success' | 'warning' | 'danger' | 'info' => {
-  const statusMap: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
+export const getStatusBadgeVariant = (status: string): 'default' | 'success' | 'warning' | 'danger' | 'info' | 'secondary' => {
+  const statusMap: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info' | 'secondary'> = {
     applied: 'info',
     screening: 'warning',
     microship_pending: 'warning',
@@ -52,6 +53,11 @@ export const getStatusBadgeVariant = (status: string): 'default' | 'success' | '
     progress: 'success',
     retry: 'warning',
     fail: 'danger',
+    // Challenge statuses
+    draft: 'secondary',
+    closed: 'warning',
+    archived: 'default',
+    do_not_progress: 'danger',
   };
 
   return statusMap[status] || 'default';

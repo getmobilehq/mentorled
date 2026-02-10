@@ -5,7 +5,6 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { applicantsAPI, bulkAPI } from '@/lib/api';
 import {
@@ -170,18 +169,18 @@ export default function BulkOperationsPage() {
 
   if (loading) {
     return (
-      <ProtectedRoute>
+
         <AppLayout>
           <div className="flex items-center justify-center h-full">
             <div className="text-gray-500">Loading...</div>
           </div>
         </AppLayout>
-      </ProtectedRoute>
+
     );
   }
 
   return (
-    <ProtectedRoute>
+
       <AppLayout>
         <div className="space-y-6">
           {/* Page header */}
@@ -464,6 +463,6 @@ export default function BulkOperationsPage() {
           </Card>
         </div>
       </AppLayout>
-    </ProtectedRoute>
+
   );
 }

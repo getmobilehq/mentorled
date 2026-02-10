@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { microshipAPI, applicantsAPI } from '@/lib/api';
 import {
@@ -108,7 +107,7 @@ export default function MicroshipPage() {
   };
 
   return (
-    <ProtectedRoute>
+
       <AppLayout>
         {loading ? (
           <div className="flex items-center justify-center h-full">
@@ -491,6 +490,6 @@ export default function MicroshipPage() {
           </div>
         )}
       </AppLayout>
-    </ProtectedRoute>
+
   );
 }

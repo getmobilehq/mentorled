@@ -2,6 +2,8 @@ from app.models.cohort import Cohort
 from app.models.mentor import Mentor
 from app.models.applicant import Applicant
 from app.models.evaluation import ApplicationEvaluation
+from app.models.challenge_track_config import ChallengeTrackConfig
+from app.models.challenge import Challenge
 from app.models.microship import MicroshipSubmission
 from app.models.team import Team
 from app.models.fellow import Fellow
@@ -20,6 +22,8 @@ __all__ = [
     "Mentor",
     "Applicant",
     "ApplicationEvaluation",
+    "ChallengeTrackConfig",
+    "Challenge",
     "MicroshipSubmission",
     "Team",
     "Fellow",

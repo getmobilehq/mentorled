@@ -23,6 +23,10 @@ class MicroshipSubmission(Base):
         nullable=False
     )
     challenge_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    challenge_ref: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("challenges.id", ondelete="SET NULL"),
+        nullable=True
+    )
     submission_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     submission_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
@@ -41,4 +45,9 @@ class MicroshipSubmission(Base):
     applicant: Mapped["Applicant"] = relationship(
         "Applicant",
         back_populates="microship_submissions"
+    )
+    challenge: Mapped[Optional["Challenge"]] = relationship(
+        "Challenge",
+        back_populates="submissions",
+        foreign_keys=[challenge_ref]
     )
