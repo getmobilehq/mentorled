@@ -239,6 +239,31 @@ class EmailService:
             context=context,
         )
 
+    async def send_deadline_reminder(
+        self,
+        applicant_email: str,
+        applicant_name: str,
+        challenge_title: str,
+        deadline: str,
+        hours_remaining: int,
+        submission_url: str,
+    ) -> bool:
+        """Send deadline reminder email to applicant."""
+        subject = f"Reminder: {challenge_title} - Deadline in {hours_remaining}h"
+        context = {
+            "applicant_name": applicant_name,
+            "challenge_title": challenge_title,
+            "deadline": deadline,
+            "hours_remaining": hours_remaining,
+            "submission_url": submission_url,
+        }
+        return await self.send_email(
+            to_email=applicant_email,
+            subject=subject,
+            template_name="deadline_reminder.html",
+            context=context,
+        )
+
     async def send_submission_confirmation(
         self,
         applicant_email: str,

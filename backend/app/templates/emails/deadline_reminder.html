@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Deadline Reminder</h1>
+
+<p>Dear {{ applicant_name }},</p>
+
+<p>This is a friendly reminder that the deadline for your Microship challenge is approaching.</p>
+
+<div class="highlight">
+    <h2 style="margin-top: 0;">{{ challenge_title }}</h2>
+    <p>
+        <strong>Deadline:</strong>
+        <span class="badge badge-warning">{{ deadline }}</span>
+    </p>
+    <p>
+        <strong>Time Remaining:</strong> Approximately {{ hours_remaining }} hours
+    </p>
+</div>
+
+<p>Please make sure to submit your work before the deadline. Late submissions may not be accepted.</p>
+
+<p style="text-align: center; margin-top: 30px;">
+    <a href="{{ submission_url }}" class="button">Submit Your Work</a>
+</p>
+
+<p>If you have already submitted, you can disregard this message.</p>
+
+<p>
+    Best regards,<br>
+    The MentorLed Team
+</p>
+{% endblock %}

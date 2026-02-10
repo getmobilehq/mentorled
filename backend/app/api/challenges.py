@@ -24,6 +24,7 @@ from app.schemas.challenge import (
 )
 from app.agents.challenge_generator import challenge_generator
 from app.utils.email import email_service
+from app.services.auto_evaluate import run_auto_evaluation
 
 router = APIRouter(prefix="/challenges")
 
@@ -52,6 +53,7 @@ async def _enrich_challenge_response(challenge: Challenge, db: AsyncSession) -> 
         "status": challenge.status,
         "share_token": challenge.share_token,
         "created_by": challenge.created_by,
+        "auto_evaluate": challenge.auto_evaluate,
         "duration_hours": challenge.duration_hours,
         "sequence_number": challenge.sequence_number,
         "track_config_id": challenge.track_config_id,
@@ -147,6 +149,7 @@ async def create_challenge(
         submission_types=challenge.submission_types,
         deadline=challenge.deadline,
         status=ChallengeStatus.DRAFT.value,
+        auto_evaluate=challenge.auto_evaluate,
         duration_hours=challenge.duration_hours,
         sequence_number=sequence_number,
         track_config_id=challenge.track_config_id,
@@ -496,6 +499,10 @@ async def public_submit(
         submitted_at=now.strftime("%B %d, %Y at %I:%M %p UTC"),
         on_time=on_time,
     )
+
+    # Auto-evaluate if enabled on this challenge
+    if challenge.auto_evaluate:
+        background_tasks.add_task(run_auto_evaluation, new_submission.id)
 
     return PublicSubmissionResponse(
         message="Submission received successfully",

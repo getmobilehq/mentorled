@@ -39,6 +39,7 @@ class ChallengeCreate(BaseModel):
     role_type: str = "all"
     submission_types: List[str] = Field(default=["github", "figma", "document"])
     deadline: datetime
+    auto_evaluate: bool = False
     duration_hours: Optional[int] = None
     sequence_number: Optional[int] = None
     track_config_id: Optional[UUID] = None
@@ -51,6 +52,7 @@ class ChallengeUpdate(BaseModel):
     role_type: Optional[str] = None
     submission_types: Optional[List[str]] = None
     deadline: Optional[datetime] = None
+    auto_evaluate: Optional[bool] = None
     cohort_id: Optional[UUID] = None
     duration_hours: Optional[int] = None
     sequence_number: Optional[int] = None
@@ -73,6 +75,7 @@ class ChallengeResponse(BaseModel):
     status: str
     share_token: str
     created_by: Optional[UUID] = None
+    auto_evaluate: bool = False
     duration_hours: Optional[int] = None
     sequence_number: Optional[int] = None
     track_config_id: Optional[UUID] = None

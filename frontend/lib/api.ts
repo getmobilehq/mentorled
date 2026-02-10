@@ -52,6 +52,8 @@ export const applicantsAPI = {
     api.post('/api/applicants/', data),
   update: (id: string, data: any) =>
     api.put(`/api/applicants/${id}`, data),
+  getJourney: (id: string) =>
+    api.get(`/api/applicants/${id}/journey`),
 };
 
 export const screeningAPI = {

@@ -302,6 +302,7 @@ export interface Challenge {
   status: ChallengeStatus;
   share_token: string;
   created_by?: string | null;
+  auto_evaluate?: boolean;
   duration_hours?: number | null;
   sequence_number?: number | null;
   track_config_id?: string | null;
@@ -358,6 +359,42 @@ export interface ChallengeAnalytics {
     average_score: number;
     pass_rate: number;
   }>;
+}
+
+// Journey types
+export type JourneyEventType = 'applied' | 'evaluation' | 'submission' | 'decision' | 'fellow_started';
+
+export interface JourneyEvent {
+  type: JourneyEventType;
+  date: string;
+  title: string;
+  description: string;
+  metadata?: Record<string, any>;
+}
+
+export interface JourneyFellow {
+  id: string;
+  status: string;
+  role: string;
+  microship_score?: number | null;
+  milestone_1_score?: number | null;
+  milestone_2_score?: number | null;
+  current_risk_level?: string | null;
+  warnings_count: number;
+  started_at?: string | null;
+}
+
+export interface ApplicantJourney {
+  applicant: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+    applied_at?: string | null;
+  };
+  timeline: JourneyEvent[];
+  fellow: JourneyFellow | null;
 }
 
 export interface PublicSubmissionCreate {

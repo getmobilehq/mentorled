@@ -49,6 +49,9 @@ class Challenge(Base):
         nullable=True
     )
 
+    # Auto-evaluate submissions on receipt
+    auto_evaluate: Mapped[bool] = mapped_column(default=False)
+
     # Track configuration fields (nullable for backward compatibility)
     duration_hours: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     sequence_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

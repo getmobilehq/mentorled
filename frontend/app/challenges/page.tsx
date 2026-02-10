@@ -54,10 +54,10 @@ const DURATION_OPTIONS = [
   { value: 48, label: '48 hours' },
 ];
 
-const OUTCOME_CONFIG: Record<string, { label: string; variant: 'success' | 'info' | 'error' | 'warning'; icon: typeof CheckCircle }> = {
+const OUTCOME_CONFIG: Record<string, { label: string; variant: 'success' | 'info' | 'danger' | 'warning'; icon: typeof CheckCircle }> = {
   progress: { label: 'Progress', variant: 'success', icon: CheckCircle },
   borderline: { label: 'Borderline', variant: 'warning', icon: AlertTriangle },
-  do_not_progress: { label: 'Do Not Progress', variant: 'error', icon: XCircle },
+  do_not_progress: { label: 'Do Not Progress', variant: 'danger', icon: XCircle },
 };
 
 const SCORE_LABELS: Record<string, string> = {
@@ -92,6 +92,7 @@ export default function ChallengesPage() {
     submission_types: ['github'],
     deadline: '',
     cohort_id: '',
+    auto_evaluate: false,
     duration_hours: '' as string | number,
     sequence_number: null as number | null,
     track_config_id: '' as string,
@@ -177,6 +178,7 @@ export default function ChallengesPage() {
         submission_types: formData.submission_types,
         deadline: formData.deadline,
       };
+      payload.auto_evaluate = formData.auto_evaluate;
       if (formData.duration_hours) {
         payload.duration_hours = Number(formData.duration_hours);
       }
@@ -212,6 +214,7 @@ export default function ChallengesPage() {
       submission_types: ['github'],
       deadline: '',
       cohort_id: '',
+      auto_evaluate: false,
       duration_hours: '',
       sequence_number: null,
       track_config_id: '',
@@ -240,6 +243,7 @@ export default function ChallengesPage() {
       submission_types: [...challenge.submission_types],
       deadline: challenge.deadline ? challenge.deadline.slice(0, 16) : '',
       cohort_id: challenge.cohort_id || '',
+      auto_evaluate: challenge.auto_evaluate || false,
       duration_hours: challenge.duration_hours || '',
       sequence_number: challenge.sequence_number ?? null,
       track_config_id: challenge.track_config_id || '',
@@ -357,6 +361,7 @@ export default function ChallengesPage() {
       submission_types: ['github'],
       deadline: '',
       cohort_id: track.cohort_id,
+      auto_evaluate: false,
       duration_hours: '',
       sequence_number: sequenceNum,
       track_config_id: track.id,
@@ -857,6 +862,12 @@ export default function ChallengesPage() {
                                 {challenge.duration_hours}h
                               </Badge>
                             )}
+                            {challenge.auto_evaluate && (
+                              <Badge variant="info">
+                                <Zap className="mr-1 h-3 w-3 inline" />
+                                Auto-Eval
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-sm text-gray-600 line-clamp-2 mb-3">
                             {challenge.description}
@@ -1133,6 +1144,25 @@ export default function ChallengesPage() {
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Auto-Evaluate */}
+              <div className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3">
+                <input
+                  type="checkbox"
+                  id="auto_evaluate"
+                  checked={formData.auto_evaluate}
+                  onChange={e => setFormData(prev => ({ ...prev, auto_evaluate: e.target.checked }))}
+                  className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                />
+                <div>
+                  <label htmlFor="auto_evaluate" className="text-sm font-medium text-gray-700 cursor-pointer">
+                    Auto-Evaluate Submissions
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    Automatically run AI evaluation when applicants submit their work.
+                  </p>
+                </div>
               </div>
 
               {/* Submission Types */}
