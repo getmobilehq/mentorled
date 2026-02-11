@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from app.database import get_db
-from app.models.cohort import Cohort
+from app.models.cohort import Cohort, CohortStatus
 from pydantic import BaseModel
 from datetime import date
 
@@ -16,6 +16,15 @@ class CohortCreate(BaseModel):
     start_date: date
     end_date: date
     target_size: int = 100
+
+class CohortUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    target_size: Optional[int] = None
+
+class CohortStatusUpdate(BaseModel):
+    status: str
 
 class CohortResponse(BaseModel):
     id: UUID
@@ -54,4 +63,61 @@ async def get_cohort(cohort_id: UUID, db: AsyncSession = Depends(get_db)):
     cohort = result.scalar_one_or_none()
     if not cohort:
         raise HTTPException(status_code=404, detail="Cohort not found")
+    return cohort
+
+
+@router.put("/{cohort_id}", response_model=CohortResponse)
+async def update_cohort(
+    cohort_id: UUID,
+    updates: CohortUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a cohort."""
+    result = await db.execute(select(Cohort).where(Cohort.id == cohort_id))
+    cohort = result.scalar_one_or_none()
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+
+    for field, value in updates.model_dump(exclude_unset=True).items():
+        setattr(cohort, field, value)
+
+    await db.commit()
+    await db.refresh(cohort)
+    return cohort
+
+
+@router.patch("/{cohort_id}/status", response_model=CohortResponse)
+async def update_cohort_status(
+    cohort_id: UUID,
+    status_update: CohortStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a cohort's status with validated transitions."""
+    result = await db.execute(select(Cohort).where(Cohort.id == cohort_id))
+    cohort = result.scalar_one_or_none()
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+
+    valid_transitions = {
+        "planning": ["applications_open"],
+        "applications_open": ["microship"],
+        "microship": ["active"],
+        "active": ["completed"],
+        "completed": [],
+    }
+
+    current = cohort.status
+    if isinstance(current, CohortStatus):
+        current = current.value
+
+    new_status = status_update.status
+    if new_status not in valid_transitions.get(current, []):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot transition from '{current}' to '{new_status}'. Valid: {valid_transitions.get(current, [])}"
+        )
+
+    cohort.status = new_status
+    await db.commit()
+    await db.refresh(cohort)
     return cohort

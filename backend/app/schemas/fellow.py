@@ -29,6 +29,7 @@ class FellowResponse(FellowBase):
     team_id: Optional[UUID4]
     microship_score: Optional[float]
     current_risk_score: Optional[float]
+    current_risk_level: Optional[str] = None
     milestone_1_score: Optional[float]
     milestone_2_score: Optional[float]
     milestone_3_score: Optional[float]
@@ -38,6 +39,8 @@ class FellowResponse(FellowBase):
     ended_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    name: Optional[str] = None
+    email: Optional[str] = None
 
     class Config:
         from_attributes = True

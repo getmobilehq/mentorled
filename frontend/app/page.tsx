@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { applicantsAPI, screeningAPI, healthAPI } from '@/lib/api';
+import { applicantsAPI, screeningAPI, healthAPI, analyticsAPI, challengesAPI } from '@/lib/api';
 import {
   Users,
   ClipboardCheck,
@@ -13,14 +13,39 @@ import {
   DollarSign,
   TrendingUp,
   CheckCircle,
+  Activity,
+  Flag,
+  Calendar,
+  ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Applicant, QueueStats, HealthCheck } from '@/types';
+import type { Applicant, QueueStats, HealthCheck, ChallengeAnalytics } from '@/types';
+
+interface AnalyticsDashboard {
+  applicants: { total: number; by_status: Record<string, number>; by_role: Record<string, number> };
+  fellows: { total: number; by_status: Record<string, number>; by_risk_level: Record<string, number> };
+  evaluations: { total: number; by_outcome: Record<string, number>; average_score: number; average_confidence: number; human_review_rate: number };
+  ai_usage: { total_ai_calls_30d: number; total_cost_30d_usd: number; average_cost_per_call: number };
+}
+
+interface ConversionFunnel {
+  applied: number;
+  screening: number;
+  eligible: number;
+  microship_submitted: number;
+  microship_evaluated: number;
+  accepted: number;
+  not_eligible: number;
+  conversion_rate: number;
+}
 
 export default function Dashboard() {
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [health, setHealth] = useState<HealthCheck | null>(null);
+  const [dashboard, setDashboard] = useState<AnalyticsDashboard | null>(null);
+  const [funnel, setFunnel] = useState<ConversionFunnel | null>(null);
+  const [challengeAnalytics, setChallengeAnalytics] = useState<ChallengeAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,15 +54,21 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const [applicantsRes, queueRes, healthRes] = await Promise.all([
+      const [applicantsRes, queueRes, healthRes, dashboardRes, funnelRes, challengeRes] = await Promise.all([
         applicantsAPI.list(),
         screeningAPI.getQueue(),
         healthAPI.check(),
+        analyticsAPI.getDashboard().catch(() => null),
+        analyticsAPI.getConversionFunnel().catch(() => null),
+        challengesAPI.getAnalytics().catch(() => null),
       ]);
 
       setApplicants(applicantsRes.data);
       setQueueStats(queueRes.data);
       setHealth(healthRes.data);
+      if (dashboardRes) setDashboard(dashboardRes.data);
+      if (funnelRes) setFunnel(funnelRes.data);
+      if (challengeRes) setChallengeAnalytics(challengeRes.data);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -48,181 +79,294 @@ export default function Dashboard() {
   const stats = [
     {
       name: 'Total Applicants',
-      value: applicants.length,
+      value: dashboard?.applicants.total ?? applicants.length,
       icon: Users,
       color: 'text-blue-600',
       bgColor: 'bg-blue-100',
     },
     {
-      name: 'In Screening',
-      value: queueStats?.total_in_queue || 0,
-      icon: ClipboardCheck,
-      color: 'text-yellow-600',
-      bgColor: 'bg-yellow-100',
-    },
-    {
-      name: 'Require Review',
-      value: queueStats?.requires_review || 0,
-      icon: AlertCircle,
-      color: 'text-red-600',
-      bgColor: 'bg-red-100',
-    },
-    {
-      name: 'AI Cost (Est.)',
-      value: '$0.01',
-      icon: DollarSign,
+      name: 'Active Fellows',
+      value: dashboard?.fellows.total ?? 0,
+      icon: TrendingUp,
       color: 'text-green-600',
       bgColor: 'bg-green-100',
+    },
+    {
+      name: 'AI Evaluations',
+      value: dashboard?.evaluations.total ?? 0,
+      icon: Activity,
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-100',
+    },
+    {
+      name: 'AI Cost (30d)',
+      value: `$${dashboard?.ai_usage.total_cost_30d_usd?.toFixed(2) ?? '0.00'}`,
+      icon: DollarSign,
+      color: 'text-yellow-600',
+      bgColor: 'bg-yellow-100',
     },
   ];
 
   const recentApplicants = applicants.slice(0, 5);
 
   return (
-
-      <AppLayout>
-        {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-gray-500">Loading...</div>
+    <AppLayout>
+      {loading ? (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-gray-500">Loading...</div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Page header */}
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+            <p className="mt-2 text-gray-600">
+              Welcome to the MentorLed AI-Ops Platform
+            </p>
           </div>
-        ) : (
-          <div className="space-y-6">
-        {/* Page header */}
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-2 text-gray-600">
-            Welcome to the MentorLed AI-Ops Platform
-          </p>
-        </div>
 
-        {/* System Health */}
-        {health && (
-          <Card>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
-                  <CheckCircle className="h-6 w-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">System Status</p>
-                  <p className="text-sm text-gray-600">{health.service} - v{health.version}</p>
-                </div>
-              </div>
-              <Badge variant="success">{health.status}</Badge>
-            </div>
-          </Card>
-        )}
-
-        {/* Stats grid */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={stat.name}>
-                <div className="flex items-center">
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${stat.bgColor}`}>
-                    <Icon className={`h-6 w-6 ${stat.color}`} />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">{stat.name}</p>
-                    <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Two column layout */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Recent Applicants */}
-          <Card>
-            <CardHeader>
+          {/* System Health */}
+          {health && (
+            <Card>
               <div className="flex items-center justify-between">
-                <CardTitle>Recent Applicants</CardTitle>
-                <Link href="/applicants">
-                  <Button variant="ghost" size="sm">View All</Button>
-                </Link>
+                <div className="flex items-center space-x-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
+                    <CheckCircle className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">System Status</p>
+                    <p className="text-sm text-gray-600">{health.service} - v{health.version}</p>
+                  </div>
+                </div>
+                <Badge variant="success">{health.status}</Badge>
               </div>
-            </CardHeader>
-            <CardContent>
-              {recentApplicants.length === 0 ? (
-                <p className="text-center text-sm text-gray-500 py-8">No applicants yet</p>
-              ) : (
-                <div className="space-y-4">
-                  {recentApplicants.map((applicant) => (
-                    <div key={applicant.id} className="flex items-center justify-between border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                      <div>
-                        <p className="font-medium text-gray-900">{applicant.name}</p>
-                        <p className="text-sm text-gray-600">{applicant.role.replace('_', ' ')}</p>
-                      </div>
-                      <Badge variant={applicant.status === 'accepted' ? 'success' : 'default'}>
-                        {applicant.status}
-                      </Badge>
+            </Card>
+          )}
+
+          {/* Stats grid */}
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {stats.map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <Card key={stat.name}>
+                  <div className="flex items-center">
+                    <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${stat.bgColor}`}>
+                      <Icon className={`h-6 w-6 ${stat.color}`} />
                     </div>
+                    <div className="ml-4">
+                      <p className="text-sm font-medium text-gray-600">{stat.name}</p>
+                      <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Conversion Funnel */}
+          {funnel && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Application Pipeline</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  {[
+                    { label: 'Applied', value: funnel.applied, color: 'bg-blue-100 text-blue-800' },
+                    { label: 'Screening', value: funnel.screening, color: 'bg-yellow-100 text-yellow-800' },
+                    { label: 'Eligible', value: funnel.eligible, color: 'bg-purple-100 text-purple-800' },
+                    { label: 'Microship', value: funnel.microship_submitted, color: 'bg-teal-100 text-teal-800' },
+                    { label: 'Accepted', value: funnel.accepted, color: 'bg-green-100 text-green-800' },
+                  ].map((stage, idx, arr) => (
+                    <React.Fragment key={stage.label}>
+                      <div className="text-center flex-1">
+                        <p className="text-2xl font-bold text-gray-900">{stage.value}</p>
+                        <p className={`text-xs font-medium mt-1 inline-block px-2 py-0.5 rounded-full ${stage.color}`}>
+                          {stage.label}
+                        </p>
+                      </div>
+                      {idx < arr.length - 1 && (
+                        <ArrowRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
+                      )}
+                    </React.Fragment>
                   ))}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+                <div className="text-center mt-4 pt-3 border-t border-gray-100">
+                  <span className="text-sm text-gray-500">Overall Conversion: </span>
+                  <span className="text-lg font-bold text-gray-900">{funnel.conversion_rate.toFixed(1)}%</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <Link href="/screening" className="block">
-                  <Button variant="primary" className="w-full justify-start">
-                    <ClipboardCheck className="mr-2 h-5 w-5" />
-                    Review Screening Queue
-                  </Button>
-                </Link>
-                <Link href="/applicants" className="block">
-                  <Button variant="secondary" className="w-full justify-start">
-                    <Users className="mr-2 h-5 w-5" />
-                    Manage Applicants
-                  </Button>
-                </Link>
-                <Link href="/fellows" className="block">
-                  <Button variant="secondary" className="w-full justify-start">
-                    <TrendingUp className="mr-2 h-5 w-5" />
-                    View Fellows
-                  </Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Two column layout */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Recent Applicants */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Recent Applicants</CardTitle>
+                  <Link href="/applicants">
+                    <Button variant="ghost" size="sm">View All</Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {recentApplicants.length === 0 ? (
+                  <p className="text-center text-sm text-gray-500 py-8">No applicants yet</p>
+                ) : (
+                  <div className="space-y-4">
+                    {recentApplicants.map((applicant) => (
+                      <div key={applicant.id} className="flex items-center justify-between border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+                        <div>
+                          <p className="font-medium text-gray-900">{applicant.name}</p>
+                          <p className="text-sm text-gray-600">{applicant.role.replace('_', ' ')}</p>
+                        </div>
+                        <Badge variant={applicant.status === 'accepted' ? 'success' : 'default'}>
+                          {applicant.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Challenge Activity */}
+            {challengeAnalytics && challengeAnalytics.total_challenges > 0 ? (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Challenge Activity</CardTitle>
+                    <Link href="/challenges">
+                      <Button variant="ghost" size="sm">View All</Button>
+                    </Link>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-3 bg-blue-50 rounded-lg">
+                      <p className="text-sm font-medium text-blue-900">Total Challenges</p>
+                      <p className="mt-1 text-2xl font-bold text-blue-600">{challengeAnalytics.total_challenges}</p>
+                    </div>
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <p className="text-sm font-medium text-green-900">Submissions</p>
+                      <p className="mt-1 text-2xl font-bold text-green-600">{challengeAnalytics.total_submissions}</p>
+                    </div>
+                    <div className="text-center p-3 bg-purple-50 rounded-lg">
+                      <p className="text-sm font-medium text-purple-900">Evaluated</p>
+                      <p className="mt-1 text-2xl font-bold text-purple-600">{challengeAnalytics.total_evaluated}</p>
+                    </div>
+                    <div className="text-center p-3 bg-teal-50 rounded-lg">
+                      <p className="text-sm font-medium text-teal-900">Pass Rate</p>
+                      <p className="mt-1 text-2xl font-bold text-teal-600">{challengeAnalytics.pass_rate}%</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Actions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <Link href="/screening" className="block">
+                      <Button variant="primary" className="w-full justify-start">
+                        <ClipboardCheck className="mr-2 h-5 w-5" />
+                        Review Screening Queue
+                        {queueStats && queueStats.requires_review > 0 && (
+                          <Badge variant="danger" className="ml-auto">{queueStats.requires_review}</Badge>
+                        )}
+                      </Button>
+                    </Link>
+                    <Link href="/challenges" className="block">
+                      <Button variant="secondary" className="w-full justify-start">
+                        <Flag className="mr-2 h-5 w-5" />
+                        Manage Challenges
+                      </Button>
+                    </Link>
+                    <Link href="/cohorts" className="block">
+                      <Button variant="secondary" className="w-full justify-start">
+                        <Calendar className="mr-2 h-5 w-5" />
+                        Manage Cohorts
+                      </Button>
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Quick Actions + Screening Queue */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Quick Actions (always shown when challenge activity is above) */}
+            {challengeAnalytics && challengeAnalytics.total_challenges > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Actions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <Link href="/screening" className="block">
+                      <Button variant="primary" className="w-full justify-start">
+                        <ClipboardCheck className="mr-2 h-5 w-5" />
+                        Review Screening Queue
+                        {queueStats && queueStats.requires_review > 0 && (
+                          <Badge variant="danger" className="ml-auto">{queueStats.requires_review}</Badge>
+                        )}
+                      </Button>
+                    </Link>
+                    <Link href="/challenges" className="block">
+                      <Button variant="secondary" className="w-full justify-start">
+                        <Flag className="mr-2 h-5 w-5" />
+                        Manage Challenges
+                      </Button>
+                    </Link>
+                    <Link href="/cohorts" className="block">
+                      <Button variant="secondary" className="w-full justify-start">
+                        <Calendar className="mr-2 h-5 w-5" />
+                        Manage Cohorts
+                      </Button>
+                    </Link>
+                    <Link href="/risk" className="block">
+                      <Button variant="secondary" className="w-full justify-start">
+                        <AlertCircle className="mr-2 h-5 w-5" />
+                        Risk Dashboard
+                      </Button>
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Screening Queue Summary */}
+            {queueStats && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Screening Queue Status</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div className="rounded-lg bg-blue-50 p-4">
+                      <p className="text-sm font-medium text-blue-900">Pending Applications</p>
+                      <p className="mt-1 text-3xl font-bold text-blue-600">{queueStats.pending_applications}</p>
+                    </div>
+                    <div className="rounded-lg bg-yellow-50 p-4">
+                      <p className="text-sm font-medium text-yellow-900">Pending Microships</p>
+                      <p className="mt-1 text-3xl font-bold text-yellow-600">{queueStats.pending_microships}</p>
+                    </div>
+                    <div className="rounded-lg bg-red-50 p-4">
+                      <p className="text-sm font-medium text-red-900">Requires Review</p>
+                      <p className="mt-1 text-3xl font-bold text-red-600">{queueStats.requires_review}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
-
-        {/* Screening Queue Summary */}
-        {queueStats && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Screening Queue Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div className="rounded-lg bg-blue-50 p-4">
-                  <p className="text-sm font-medium text-blue-900">Pending Applications</p>
-                  <p className="mt-1 text-3xl font-bold text-blue-600">{queueStats.pending_applications}</p>
-                </div>
-                <div className="rounded-lg bg-yellow-50 p-4">
-                  <p className="text-sm font-medium text-yellow-900">Pending Microships</p>
-                  <p className="mt-1 text-3xl font-bold text-yellow-600">{queueStats.pending_microships}</p>
-                </div>
-                <div className="rounded-lg bg-red-50 p-4">
-                  <p className="text-sm font-medium text-red-900">Requires Review</p>
-                  <p className="mt-1 text-3xl font-bold text-red-600">{queueStats.requires_review}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        </div>
-        )}
-      </AppLayout>
-
+      )}
+    </AppLayout>
   );
 }

@@ -2,7 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from sqlalchemy.orm import selectinload
+from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 
@@ -123,6 +124,7 @@ async def analyze_check_in(
     result = await db.execute(
         select(CheckIn, Fellow)
         .join(Fellow, CheckIn.fellow_id == Fellow.id)
+        .options(selectinload(Fellow.applicant))
         .filter(CheckIn.id == check_in_id)
     )
     row = result.first()
@@ -131,10 +133,11 @@ async def analyze_check_in(
         raise HTTPException(status_code=404, detail="Check-in not found")
 
     check_in, fellow = row
+    fellow_name = fellow.applicant.name if fellow.applicant else "Unknown"
 
     # Prepare data for analyzer
     check_in_data = {
-        'fellow_name': fellow.name,
+        'fellow_name': fellow_name,
         'week': check_in.week,
         'role': fellow.role,
         'accomplishments': check_in.accomplishments,
@@ -168,7 +171,7 @@ async def analyze_check_in(
     return CheckInAnalysisResponse(
         check_in_id=check_in.id,
         fellow_id=fellow.id,
-        fellow_name=fellow.name,
+        fellow_name=fellow_name,
         week=check_in.week,
         analysis=analysis,
         analyzed_at=check_in.analyzed_at
@@ -189,3 +192,68 @@ async def get_check_ins_by_week(
     )
     check_ins = result.scalars().all()
     return check_ins
+
+
+@router.post("/analyze-bulk")
+async def bulk_analyze_check_ins(
+    week: Optional[int] = None,
+    cohort_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
+):
+    """Analyze all pending (unanalyzed) check-ins."""
+    query = (
+        select(CheckIn, Fellow)
+        .join(Fellow, CheckIn.fellow_id == Fellow.id)
+        .options(selectinload(Fellow.applicant))
+        .filter(CheckIn.analyzed_at == None)
+    )
+
+    if week is not None:
+        query = query.filter(CheckIn.week == week)
+    if cohort_id:
+        query = query.filter(Fellow.cohort_id == cohort_id)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    analyzed_count = 0
+    errors = []
+
+    for check_in, fellow in rows:
+        try:
+            fellow_name = fellow.applicant.name if fellow.applicant else "Unknown"
+            check_in_data = {
+                'fellow_name': fellow_name,
+                'week': check_in.week,
+                'role': fellow.role,
+                'accomplishments': check_in.accomplishments,
+                'next_focus': check_in.next_focus,
+                'blockers': check_in.blockers,
+                'needs_help': check_in.needs_help,
+                'self_assessment': check_in.self_assessment,
+                'collaboration_rating': check_in.collaboration_rating,
+                'energy_level': check_in.energy_level,
+                'submitted_at': check_in.submitted_at.isoformat() if check_in.submitted_at else '',
+            }
+            analyzer = CheckInAnalyzer()
+            analysis_result = await analyzer.analyze_check_in(check_in_data)
+
+            check_in.analysis = analysis_result
+            check_in.sentiment_score = analysis_result['sentiment_score']
+            check_in.risk_contribution = analysis_result['risk_contribution']
+            check_in.blockers_extracted = analysis_result['blockers_extracted']
+            check_in.action_items = analysis_result['action_items']
+            check_in.analyzed_at = datetime.utcnow()
+
+            analyzed_count += 1
+        except Exception as e:
+            errors.append({"check_in_id": str(check_in.id), "error": str(e)})
+
+    await db.commit()
+
+    return {
+        "analyzed": analyzed_count,
+        "errors": len(errors),
+        "error_details": errors[:10],
+    }

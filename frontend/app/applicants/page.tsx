@@ -12,7 +12,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { applicantsAPI } from '@/lib/api';
+import { applicantsAPI, cohortsAPI } from '@/lib/api';
 import {
   ExternalLink,
   Mail,
@@ -24,7 +24,7 @@ import {
   Award,
   AlertTriangle,
 } from 'lucide-react';
-import type { Applicant, ApplicantJourney, JourneyEventType } from '@/types';
+import type { Applicant, ApplicantJourney, JourneyEventType, Cohort } from '@/types';
 
 function ApplicantsPageContent() {
   const [applicants, setApplicants] = useState<Applicant[]>([]);
@@ -34,10 +34,24 @@ function ApplicantsPageContent() {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [cohorts, setCohorts] = useState<Cohort[]>([]);
+  const [selectedCohort, setSelectedCohort] = useState<string>('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
 
   useEffect(() => {
     fetchApplicants();
+    fetchCohorts();
   }, []);
+
+  const fetchCohorts = async () => {
+    try {
+      const response = await cohortsAPI.list();
+      setCohorts(response.data);
+    } catch (error) {
+      console.error('Error fetching cohorts:', error);
+    }
+  };
 
   const fetchApplicants = async () => {
     try {
@@ -73,8 +87,23 @@ function ApplicantsPageContent() {
       filtered = filtered.filter((app) => selectedRoles.includes(app.role));
     }
 
+    // Cohort filter
+    if (selectedCohort) {
+      filtered = filtered.filter((app) => app.cohort_id === selectedCohort);
+    }
+
+    // Date range filter
+    if (dateFrom) {
+      filtered = filtered.filter((app) => new Date(app.applied_at) >= new Date(dateFrom));
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filtered = filtered.filter((app) => new Date(app.applied_at) <= toDate);
+    }
+
     return filtered;
-  }, [applicants, searchQuery, selectedStatuses, selectedRoles]);
+  }, [applicants, searchQuery, selectedStatuses, selectedRoles, selectedCohort, dateFrom, dateTo]);
 
   // Pagination
   const totalPages = Math.ceil(filteredApplicants.length / itemsPerPage);
@@ -86,24 +115,27 @@ function ApplicantsPageContent() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedStatuses, selectedRoles, itemsPerPage]);
+  }, [searchQuery, selectedStatuses, selectedRoles, selectedCohort, dateFrom, dateTo, itemsPerPage]);
 
   const statusOptions = [
     { value: 'applied', label: 'Applied' },
     { value: 'screening', label: 'Screening' },
-    { value: 'interview', label: 'Interview' },
+    { value: 'eligible', label: 'Eligible' },
+    { value: 'not_eligible', label: 'Not Eligible' },
+    { value: 'microship_pending', label: 'Microship Pending' },
+    { value: 'microship_submitted', label: 'Microship Submitted' },
+    { value: 'microship_evaluated', label: 'Microship Evaluated' },
     { value: 'accepted', label: 'Accepted' },
     { value: 'rejected', label: 'Rejected' },
-    { value: 'waitlisted', label: 'Waitlisted' },
+    { value: 'withdrawn', label: 'Withdrawn' },
   ];
 
   const roleOptions = [
-    { value: 'backend_engineer', label: 'Backend Engineer' },
-    { value: 'frontend_engineer', label: 'Frontend Engineer' },
-    { value: 'fullstack_engineer', label: 'Fullstack Engineer' },
-    { value: 'mobile_engineer', label: 'Mobile Engineer' },
-    { value: 'devops_engineer', label: 'DevOps Engineer' },
-    { value: 'data_engineer', label: 'Data Engineer' },
+    { value: 'product_manager', label: 'Product Manager' },
+    { value: 'product_designer', label: 'Product Designer' },
+    { value: 'frontend', label: 'Frontend' },
+    { value: 'backend', label: 'Backend' },
+    { value: 'qa', label: 'QA' },
   ];
 
   // Journey modal state
@@ -162,25 +194,55 @@ function ApplicantsPageContent() {
         </div>
 
         {/* Search and Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search by name or email..."
-            className="flex-1"
-          />
-          <FilterDropdown
-            label="Status"
-            options={statusOptions}
-            selected={selectedStatuses}
-            onChange={setSelectedStatuses}
-          />
-          <FilterDropdown
-            label="Role"
-            options={roleOptions}
-            selected={selectedRoles}
-            onChange={setSelectedRoles}
-          />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search by name or email..."
+              className="flex-1"
+            />
+            <FilterDropdown
+              label="Status"
+              options={statusOptions}
+              selected={selectedStatuses}
+              onChange={setSelectedStatuses}
+            />
+            <FilterDropdown
+              label="Role"
+              options={roleOptions}
+              selected={selectedRoles}
+              onChange={setSelectedRoles}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <select
+              value={selectedCohort}
+              onChange={e => setSelectedCohort(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+            >
+              <option value="">All Cohorts</option>
+              {cohorts.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600">From:</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              />
+              <label className="text-sm text-gray-600">To:</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Stats */}

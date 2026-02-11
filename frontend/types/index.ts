@@ -1,5 +1,5 @@
 export type ApplicantRole = 'product_manager' | 'product_designer' | 'frontend' | 'backend' | 'qa';
-export type ApplicantStatus = 'applied' | 'screening' | 'microship_pending' | 'microship_completed' | 'accepted' | 'rejected' | 'withdrawn';
+export type ApplicantStatus = 'applied' | 'screening' | 'eligible' | 'not_eligible' | 'microship_pending' | 'microship_submitted' | 'microship_evaluated' | 'accepted' | 'rejected' | 'withdrawn';
 export type CohortStatus = 'planning' | 'applications_open' | 'microship' | 'active' | 'completed';
 
 export interface Applicant {
@@ -137,6 +137,21 @@ export interface RiskAssessment {
   contributing_factors: any;
   ai_concerns?: string[];
   recommended_action: string;
+  assessed_at: string;
+}
+
+export interface RiskAssessmentDetail {
+  id: string;
+  fellow_id: string;
+  week: number;
+  risk_level: string;
+  risk_score: number;
+  signals?: Record<string, number>;
+  concerns?: Record<string, any>;
+  recommended_action?: string;
+  action_taken?: string;
+  actioned_by?: string;
+  actioned_at?: string;
   assessed_at: string;
 }
 

@@ -76,6 +76,10 @@ export const cohortsAPI = {
     api.get(`/api/cohorts/${id}`),
   create: (data: any) =>
     api.post('/api/cohorts/', data),
+  update: (id: string, data: any) =>
+    api.put(`/api/cohorts/${id}`, data),
+  updateStatus: (id: string, status: string) =>
+    api.patch(`/api/cohorts/${id}/status`, { status }),
 };
 
 export const fellowsAPI = {
@@ -149,6 +153,8 @@ export const checkInsAPI = {
     api.post('/api/check-ins', data),
   analyze: (checkInId: string) =>
     api.post(`/api/check-ins/analyze/${checkInId}`),
+  analyzeBulk: (week?: number, cohortId?: string) =>
+    api.post('/api/check-ins/analyze-bulk', null, { params: { week, cohort_id: cohortId } }),
 };
 
 export const riskAPI = {

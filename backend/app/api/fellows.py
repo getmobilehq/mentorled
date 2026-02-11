@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
 
@@ -24,7 +25,7 @@ async def create_fellow(
     await db.refresh(new_fellow)
     return new_fellow
 
-@router.get("/", response_model=List[FellowResponse])
+@router.get("/")
 async def list_fellows(
     cohort_id: Optional[UUID] = None,
     status: Optional[str] = None,
@@ -32,7 +33,7 @@ async def list_fellows(
     db: AsyncSession = Depends(get_db)
 ):
     """List fellows with optional filters."""
-    query = select(Fellow)
+    query = select(Fellow).options(selectinload(Fellow.applicant))
 
     if cohort_id:
         query = query.where(Fellow.cohort_id == cohort_id)
@@ -43,16 +44,29 @@ async def list_fellows(
 
     result = await db.execute(query.order_by(Fellow.created_at.desc()))
     fellows = result.scalars().all()
-    return fellows
+    return [
+        {
+            **{c.key: getattr(f, c.key) for c in Fellow.__table__.columns},
+            "name": f.applicant.name if f.applicant else "Unknown",
+            "email": f.applicant.email if f.applicant else "",
+        }
+        for f in fellows
+    ]
 
-@router.get("/{fellow_id}", response_model=FellowResponse)
+@router.get("/{fellow_id}")
 async def get_fellow(fellow_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get a specific fellow."""
-    result = await db.execute(select(Fellow).where(Fellow.id == fellow_id))
+    result = await db.execute(
+        select(Fellow).options(selectinload(Fellow.applicant)).where(Fellow.id == fellow_id)
+    )
     fellow = result.scalar_one_or_none()
     if not fellow:
         raise HTTPException(status_code=404, detail="Fellow not found")
-    return fellow
+    return {
+        **{c.key: getattr(fellow, c.key) for c in Fellow.__table__.columns},
+        "name": fellow.applicant.name if fellow.applicant else "Unknown",
+        "email": fellow.applicant.email if fellow.applicant else "",
+    }
 
 @router.patch("/{fellow_id}", response_model=FellowResponse)
 async def update_fellow(
@@ -82,7 +96,7 @@ async def get_fellow_check_ins(
     result = await db.execute(
         select(CheckIn)
         .where(CheckIn.fellow_id == fellow_id)
-        .order_by(CheckIn.week_number.desc())
+        .order_by(CheckIn.week.desc())
     )
     check_ins = result.scalars().all()
     return check_ins

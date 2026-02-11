@@ -18,6 +18,7 @@ import {
   BarChart3,
   Layers,
   Flag,
+  Calendar,
 } from 'lucide-react';
 
 interface NavItem {
@@ -28,6 +29,7 @@ interface NavItem {
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Cohorts', href: '/cohorts', icon: Calendar },
   { name: 'Screening', href: '/screening', icon: ClipboardCheck },
   { name: 'Applicants', href: '/applicants', icon: Users },
   { name: 'Challenges', href: '/challenges', icon: Flag },
