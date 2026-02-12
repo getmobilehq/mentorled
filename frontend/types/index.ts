@@ -183,31 +183,42 @@ export interface WarningDraftResponse {
 export interface Profile {
   id: string;
   fellow_id: string;
+  headline?: string;
   summary: string;
   skills: any;
-  work_samples?: any[];
-  created_at: string;
+  projects?: any;
+  linkedin_summary?: string;
+  generated_at?: string;
+  version?: number;
 }
 
 export interface JobOpportunity {
   id: string;
   title: string;
-  company: string;
+  employer_name: string;
+  employer_contact_email?: string;
+  description?: string;
+  requirements?: string[];
+  preferred_skills?: string[];
+  experience_level?: string;
   location?: string;
-  job_type?: string;
-  required_skills?: string[];
+  remote_ok?: boolean;
   status: string;
-  posted_date?: string;
+  created_at: string;
 }
 
 export interface PlacementMatch {
   match_id: string;
   opportunity_id: string;
+  opportunity_title?: string;
+  employer_name?: string;
   match_score: number;
+  match_reasoning?: string;
+  skill_gaps?: string[];
   status: string;
   introduction_sent: boolean;
-  ai_reasoning?: string;
-  skill_gaps?: string[];
+  introduction_draft?: string;
+  created_at?: string;
 }
 
 export interface RiskDashboard {

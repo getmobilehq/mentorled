@@ -91,11 +91,6 @@ export const Sidebar: React.FC = () => {
                 `}
               />
               {item.name}
-              {item.name === 'Placement' && (
-                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-500">
-                  Soon
-                </span>
-              )}
             </Link>
           );
         })}

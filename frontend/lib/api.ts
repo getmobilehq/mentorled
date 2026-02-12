@@ -123,8 +123,16 @@ export const placementAPI = {
     api.get('/api/placement/profiles', { params: { cohort_id: cohortId } }),
   listOpportunities: (status?: string) =>
     api.get('/api/placement/opportunities', { params: { status } }),
+  createOpportunity: (data: any) =>
+    api.post('/api/placement/opportunities', data),
+  updateOpportunity: (id: string, data: any) =>
+    api.put(`/api/placement/opportunities/${id}`, data),
+  updateOpportunityStatus: (id: string, status: string) =>
+    api.patch(`/api/placement/opportunities/${id}/status`, { status }),
   getFellowMatches: (fellowId: string) =>
     api.get(`/api/placement/matches/${fellowId}`),
+  updateMatchStatus: (matchId: string, status: string) =>
+    api.patch(`/api/placement/matches/${matchId}/status`, { status }),
 };
 
 export const microshipAPI = {
