@@ -3,10 +3,10 @@ Analytics and reporting API endpoints.
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, Date
 from typing import Optional
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 from app.database import get_db
 from app.models.applicant import Applicant
@@ -14,6 +14,8 @@ from app.models.fellow import Fellow
 from app.models.evaluation import ApplicationEvaluation
 from app.models.risk_assessment import RiskAssessment
 from app.models.audit_log import AuditLog
+from app.models.microship import MicroshipSubmission
+from app.models.cohort import Cohort
 
 router = APIRouter(prefix="/analytics")
 
@@ -195,11 +197,18 @@ async def get_conversion_funnel(
 
 @router.get("/ai-performance")
 async def get_ai_performance(
+    cohort_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Get AI performance metrics"""
 
-    result = await db.execute(select(ApplicationEvaluation))
+    query = select(ApplicationEvaluation)
+    if cohort_id:
+        query = query.join(Applicant, ApplicationEvaluation.applicant_id == Applicant.id).where(
+            Applicant.cohort_id == cohort_id
+        )
+
+    result = await db.execute(query)
     evaluations = list(result.scalars().all())
 
     high_confidence = sum(1 for e in evaluations if e.confidence and e.confidence >= 0.8)
@@ -218,3 +227,121 @@ async def get_ai_performance(
         "human_override_count": human_override,
         "human_override_rate": (human_override / len(evaluations) * 100) if evaluations else 0
     }
+
+
+@router.get("/trends")
+async def get_trends(
+    cohort_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get time-series trend data for the last 30 days"""
+
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+
+    # Applications per day
+    app_query = select(
+        cast(Applicant.applied_at, Date).label("day"),
+        func.count().label("count")
+    ).where(Applicant.applied_at >= thirty_days_ago)
+    if cohort_id:
+        app_query = app_query.where(Applicant.cohort_id == cohort_id)
+    app_query = app_query.group_by("day").order_by("day")
+
+    app_result = await db.execute(app_query)
+    applications_by_day = [
+        {"date": row.day.isoformat(), "count": row.count}
+        for row in app_result.all()
+    ]
+
+    # Evaluations per day
+    eval_query = select(
+        cast(ApplicationEvaluation.created_at, Date).label("day"),
+        func.count().label("count")
+    ).where(ApplicationEvaluation.created_at >= thirty_days_ago)
+    if cohort_id:
+        eval_query = eval_query.join(
+            Applicant, ApplicationEvaluation.applicant_id == Applicant.id
+        ).where(Applicant.cohort_id == cohort_id)
+    eval_query = eval_query.group_by("day").order_by("day")
+
+    eval_result = await db.execute(eval_query)
+    evaluations_by_day = [
+        {"date": row.day.isoformat(), "count": row.count}
+        for row in eval_result.all()
+    ]
+
+    # Submissions per day
+    sub_query = select(
+        cast(MicroshipSubmission.submitted_at, Date).label("day"),
+        func.count().label("count")
+    ).where(
+        MicroshipSubmission.submitted_at.isnot(None),
+        MicroshipSubmission.submitted_at >= thirty_days_ago
+    )
+    if cohort_id:
+        sub_query = sub_query.join(
+            Applicant, MicroshipSubmission.applicant_id == Applicant.id
+        ).where(Applicant.cohort_id == cohort_id)
+    sub_query = sub_query.group_by("day").order_by("day")
+
+    sub_result = await db.execute(sub_query)
+    submissions_by_day = [
+        {"date": row.day.isoformat(), "count": row.count}
+        for row in sub_result.all()
+    ]
+
+    return {
+        "applications_by_day": applications_by_day,
+        "evaluations_by_day": evaluations_by_day,
+        "submissions_by_day": submissions_by_day,
+    }
+
+
+@router.get("/cohort-comparison")
+async def get_cohort_comparison(
+    db: AsyncSession = Depends(get_db)
+):
+    """Compare metrics across all cohorts"""
+
+    cohort_result = await db.execute(select(Cohort).order_by(Cohort.created_at.desc()))
+    cohorts = list(cohort_result.scalars().all())
+
+    comparison = []
+    for cohort in cohorts:
+        # Applicant counts
+        app_result = await db.execute(
+            select(Applicant).where(Applicant.cohort_id == cohort.id)
+        )
+        applicants = list(app_result.scalars().all())
+        applicant_count = len(applicants)
+        accepted_count = sum(1 for a in applicants if a.status == "accepted")
+
+        # Fellow count
+        fellow_result = await db.execute(
+            select(func.count()).select_from(Fellow).where(Fellow.cohort_id == cohort.id)
+        )
+        fellow_count = fellow_result.scalar() or 0
+
+        # Average evaluation score
+        eval_result = await db.execute(
+            select(func.avg(ApplicationEvaluation.overall_score)).join(
+                Applicant, ApplicationEvaluation.applicant_id == Applicant.id
+            ).where(
+                Applicant.cohort_id == cohort.id,
+                ApplicationEvaluation.overall_score.isnot(None)
+            )
+        )
+        avg_score = eval_result.scalar()
+
+        comparison.append({
+            "id": str(cohort.id),
+            "name": cohort.name,
+            "status": cohort.status,
+            "applicant_count": applicant_count,
+            "fellow_count": fellow_count,
+            "accepted_count": accepted_count,
+            "conversion_rate": round((accepted_count / applicant_count) * 100, 1) if applicant_count > 0 else 0,
+            "average_eval_score": round(float(avg_score), 1) if avg_score else 0,
+        })
+
+    return {"cohorts": comparison}

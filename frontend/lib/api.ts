@@ -198,8 +198,12 @@ export const analyticsAPI = {
     api.get('/api/analytics/dashboard', { params: { cohort_id: cohortId } }),
   getConversionFunnel: (cohortId?: string) =>
     api.get('/api/analytics/conversion-funnel', { params: { cohort_id: cohortId } }),
-  getAIPerformance: () =>
-    api.get('/api/analytics/ai-performance'),
+  getAIPerformance: (cohortId?: string) =>
+    api.get('/api/analytics/ai-performance', { params: { cohort_id: cohortId } }),
+  getTrends: (cohortId?: string) =>
+    api.get('/api/analytics/trends', { params: { cohort_id: cohortId } }),
+  getCohortComparison: () =>
+    api.get('/api/analytics/cohort-comparison'),
 };
 
 export const bulkAPI = {
