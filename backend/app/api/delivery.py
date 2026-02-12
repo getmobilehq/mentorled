@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import Optional
+from sqlalchemy import select, func, desc
+from sqlalchemy.orm import selectinload
+from typing import Optional, List
 from uuid import UUID
 from pydantic import BaseModel
 from datetime import datetime
@@ -83,7 +84,7 @@ async def assess_risk(
     result = await db.execute(
         select(CheckIn)
         .where(CheckIn.fellow_id == request.fellow_id)
-        .order_by(CheckIn.week_number.desc())
+        .order_by(CheckIn.week.desc())
         .limit(4)
     )
     check_ins = list(result.scalars().all())
@@ -159,7 +160,7 @@ async def draft_warning(
     result = await db.execute(
         select(CheckIn)
         .where(CheckIn.fellow_id == request.fellow_id)
-        .order_by(CheckIn.week_number.desc())
+        .order_by(CheckIn.week.desc())
         .limit(3)
     )
     check_ins = list(result.scalars().all())
@@ -169,16 +170,13 @@ async def draft_warning(
     warning_count = fellow.warnings_count or 0
     draft = await delivery_agent.draft_warning(fellow, risk_assessment, check_ins, warning_count)
 
-    # Create warning in draft state
+    # Create warning in draft state using correct model fields
     new_warning = Warning(
         fellow_id=fellow.id,
-        warning_number=warning_count + 1,
-        ai_draft=draft["message"],
-        tone=draft["tone"],
-        required_actions=draft["required_actions"],
-        consequences=draft["consequences"],
-        requires_human_review=True,
-        sent=False
+        level="final" if warning_count >= 1 else "first",
+        concerns=risk_assessment.ai_concerns or ["Performance concerns identified"],
+        requirements=draft.get("requirements", draft.get("required_actions", [])),
+        draft_message=draft.get("message", ""),
     )
     db.add(new_warning)
     await db.commit()
@@ -187,7 +185,15 @@ async def draft_warning(
     return {
         "warning_id": str(new_warning.id),
         "fellow_id": str(fellow.id),
-        "draft": draft
+        "draft": {
+            "id": str(new_warning.id),
+            "message": draft.get("message", ""),
+            "tone": draft.get("tone", "firm_supportive"),
+            "warning_number": warning_count + 1,
+            "required_actions": draft.get("requirements", draft.get("required_actions", [])),
+            "consequences": draft.get("escalation_note", ""),
+            "key_points": draft.get("key_points", []),
+        }
     }
 
 @router.post("/warning/{warning_id}/approve")
@@ -215,10 +221,9 @@ async def approve_warning(
         applicant = result.scalar_one_or_none()
 
     if request.approved:
-        # Use edited message if provided, otherwise use AI draft
-        warning.final_message = request.edited_message or warning.ai_draft
-        warning.sent = True
-        warning.sent_at = datetime.utcnow()
+        # Use edited message if provided, otherwise use draft_message
+        warning.final_message = request.edited_message or warning.draft_message
+        warning.issued_at = datetime.utcnow()
 
         # Update fellow's warning count
         if fellow:
@@ -238,15 +243,13 @@ async def approve_warning(
                 background_tasks.add_task(
                     email_service.send_fellow_warning,
                     fellow_email=applicant.email,
-                    fellow_name=fellow.name if hasattr(fellow, 'name') else applicant.name,
-                    warning_number=warning.warning_number,
+                    fellow_name=applicant.name,
+                    warning_number=(fellow.warnings_count or 1),
                     message=warning.final_message,
                     risk_level=risk.risk_level if risk else fellow.current_risk_level,
-                    required_actions=warning.required_actions,
-                    consequences=warning.consequences
+                    required_actions=warning.requirements or [],
+                    consequences=""
                 )
-
-    warning.requires_human_review = False
 
     await db.commit()
     await db.refresh(warning)
@@ -254,7 +257,7 @@ async def approve_warning(
     return {
         "warning_id": str(warning.id),
         "approved": request.approved,
-        "sent": warning.sent
+        "sent": warning.issued_at is not None
     }
 
 @router.get("/risk/dashboard")
@@ -263,7 +266,7 @@ async def get_risk_dashboard(
     db: AsyncSession = Depends(get_db)
 ):
     """Get risk dashboard data for all fellows."""
-    query = select(Fellow)
+    query = select(Fellow).options(selectinload(Fellow.applicant))
     if cohort_id:
         query = query.where(Fellow.cohort_id == cohort_id)
 
@@ -285,7 +288,7 @@ async def get_risk_dashboard(
 
         fellows_by_risk.append({
             "id": str(fellow.id),
-            "name": fellow.name,
+            "name": fellow.applicant.name if fellow.applicant else "Unknown",
             "role": fellow.role,
             "team_id": str(fellow.team_id) if fellow.team_id else None,
             "risk_level": fellow.current_risk_level,
@@ -298,3 +301,34 @@ async def get_risk_dashboard(
         "summary": risk_summary,
         "fellows": fellows_by_risk
     }
+
+@router.get("/warnings/{fellow_id}")
+async def get_fellow_warnings(
+    fellow_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all warnings for a fellow (no auth required)."""
+    result = await db.execute(
+        select(Warning)
+        .where(Warning.fellow_id == fellow_id)
+        .order_by(desc(Warning.created_at))
+    )
+    warnings = result.scalars().all()
+
+    return [
+        {
+            "id": str(w.id),
+            "fellow_id": str(w.fellow_id),
+            "level": w.level,
+            "concerns": w.concerns,
+            "requirements": w.requirements,
+            "draft_message": w.draft_message,
+            "final_message": w.final_message,
+            "issued_at": w.issued_at.isoformat() if w.issued_at else None,
+            "acknowledged": w.acknowledged,
+            "acknowledged_at": w.acknowledged_at.isoformat() if w.acknowledged_at else None,
+            "outcome": w.outcome,
+            "created_at": w.created_at.isoformat() if w.created_at else None,
+        }
+        for w in warnings
+    ]

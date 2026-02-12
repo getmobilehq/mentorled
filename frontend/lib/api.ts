@@ -138,6 +138,8 @@ export const microshipAPI = {
     api.post('/api/microship/submissions', data),
   evaluateSubmission: (submissionId: string) =>
     api.post(`/api/microship/evaluate/${submissionId}`),
+  evaluateBulk: () =>
+    api.post('/api/microship/evaluate-bulk'),
 };
 
 export const checkInsAPI = {

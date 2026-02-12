@@ -219,6 +219,79 @@ async def evaluate_submission(
         )
 
 
+@router.post("/evaluate-bulk")
+async def evaluate_bulk(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Bulk evaluate all unevaluated Microship submissions.
+    """
+    # Get all unevaluated submissions
+    result = await db.execute(
+        select(MicroshipSubmission).where(MicroshipSubmission.raw_analysis == None)
+    )
+    submissions = result.scalars().all()
+
+    if not submissions:
+        return {"evaluated": 0, "errors": 0, "error_details": []}
+
+    evaluated_count = 0
+    errors = []
+
+    for submission in submissions:
+        try:
+            # Get applicant info
+            result = await db.execute(
+                select(Applicant).where(Applicant.id == submission.applicant_id)
+            )
+            applicant = result.scalar_one_or_none()
+            if not applicant:
+                errors.append(f"Applicant not found for submission {submission.id}")
+                continue
+
+            # Prepare data
+            submission_data = {
+                "applicant_name": applicant.name,
+                "role": applicant.role,
+                "submission_url": submission.submission_url,
+                "submission_type": submission.submission_type,
+                "submitted_at": submission.submitted_at.isoformat() if submission.submitted_at else None,
+                "deadline": submission.deadline.isoformat() if submission.deadline else None,
+                "on_time": submission.on_time,
+                "acknowledgment_time": submission.acknowledgment_time.isoformat() if submission.acknowledgment_time else None,
+                "communication_log": submission.communication_log or []
+            }
+
+            # Choose evaluation method based on role
+            evaluator = MicroshipEvaluator()
+            if applicant.role in ['frontend', 'backend', 'fullstack']:
+                evaluation = await evaluator.evaluate_code_submission(submission_data)
+            elif applicant.role in ['product', 'product_manager']:
+                evaluation = await evaluator.evaluate_prd_submission(submission_data)
+            elif applicant.role in ['designer', 'product_designer']:
+                evaluation = await evaluator.evaluate_design_submission(submission_data)
+            else:
+                evaluation = await evaluator.evaluate_code_submission(submission_data)
+
+            # Store evaluation
+            submission.raw_analysis = evaluation
+            await db.commit()
+
+            # Auto-progress applicant status
+            await update_applicant_status_on_event(db, applicant.id, "evaluation")
+
+            evaluated_count += 1
+        except Exception as e:
+            errors.append(f"Submission {submission.id}: {str(e)}")
+
+    return {
+        "evaluated": evaluated_count,
+        "errors": len(errors),
+        "error_details": errors[:10]
+    }
+
+
 @router.get("/submissions", response_model=List[MicroshipSubmissionResponse])
 async def list_submissions(
     skip: int = 0,

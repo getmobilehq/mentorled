@@ -158,14 +158,26 @@ export interface RiskAssessmentDetail {
 export interface Warning {
   id: string;
   fellow_id: string;
-  warning_number: number;
-  ai_draft: string;
+  level?: string;
+  concerns?: string[];
+  requirements?: string[];
+  draft_message?: string;
   final_message?: string;
+  issued_at?: string;
+  acknowledged?: boolean;
+  acknowledged_at?: string;
+  outcome?: string;
+  created_at?: string;
+}
+
+export interface WarningDraftResponse {
+  id: string;
+  message: string;
   tone: string;
+  warning_number: number;
   required_actions?: string[];
   consequences?: string;
-  sent: boolean;
-  sent_at?: string;
+  key_points?: string[];
 }
 
 export interface Profile {
