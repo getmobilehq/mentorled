@@ -9,15 +9,10 @@ export const api = axios.create({
   },
 });
 
-// TEMPORARY: Disable auth interceptors until backend auth is implemented (Phase 4)
-// This prevents infinite loops and redirects
-
-/* Original interceptor code - re-enable in Phase 4
-// Request interceptor
+// Request interceptor — add auth token to all API requests
 api.interceptors.request.use(
   (config) => {
-    // Add auth token if available
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -26,21 +21,63 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor
+// Response interceptor — handle 401 with token refresh
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
+  async (error: AxiosError) => {
+    const originalRequest = error.config as any;
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refresh_token') : null;
+      if (refreshToken) {
+        try {
+          const response = await axios.post(`${API_URL}/api/auth/refresh`, {
+            refresh_token: refreshToken,
+          });
+
+          const { access_token, refresh_token: newRefreshToken } = response.data;
+          localStorage.setItem('access_token', access_token);
+          localStorage.setItem('refresh_token', newRefreshToken);
+
+          // Retry original request with new token
+          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          return api(originalRequest);
+        } catch {
+          // Refresh failed — clear tokens and redirect to login
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+          return Promise.reject(error);
+        }
+      } else {
+        // No refresh token — redirect to login
+        localStorage.removeItem('access_token');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
   }
 );
-*/
+
+// Auth API
+export const authAPI = {
+  me: () =>
+    api.get('/api/auth/me'),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    api.post('/api/auth/change-password', data),
+  listUsers: () =>
+    api.get('/api/auth/users'),
+  createUser: (data: { email: string; username: string; full_name: string; password: string; role: string }) =>
+    api.post('/api/auth/users', data),
+  updateUser: (id: string, data: { full_name?: string; email?: string; role?: string; is_active?: boolean }) =>
+    api.put(`/api/auth/users/${id}`, data),
+};
 
 // API endpoints
 export const applicantsAPI = {

@@ -18,8 +18,8 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    """User login request"""
-    username: str
+    """User login request (email-based)"""
+    email: str
     password: str
 
 
@@ -28,13 +28,6 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-
-
-class TokenData(BaseModel):
-    """Data encoded in JWT token"""
-    user_id: str
-    username: str
-    role: UserRole
 
 
 class UserResponse(BaseModel):
@@ -53,12 +46,41 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class LoginResponse(BaseModel):
+    """Login response with tokens and user data"""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class RefreshRequest(BaseModel):
+    """Refresh token request"""
+    refresh_token: str
+
+
+class TokenData(BaseModel):
+    """Data encoded in JWT token"""
+    user_id: str
+    username: str
+    role: UserRole
+
+
 class UserUpdate(BaseModel):
     """User update request"""
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
+
+
+class UserCreate(BaseModel):
+    """Admin creates a new user"""
+    email: EmailStr
+    username: str = Field(..., min_length=3, max_length=50)
+    full_name: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=8, max_length=72)
+    role: UserRole = UserRole.VIEWER
 
 
 class PasswordChange(BaseModel):

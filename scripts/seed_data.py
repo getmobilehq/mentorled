@@ -22,6 +22,8 @@ from app.models.microship import MicroshipSubmission
 from app.models.challenge import Challenge
 from app.models.challenge_track_config import ChallengeTrackConfig
 from app.models.team import Team
+from app.models.user import User, UserRole
+from app.utils.auth import hash_password
 import secrets
 
 async def seed_database():
@@ -43,6 +45,24 @@ async def seed_database():
                 print("   docker-compose down -v")
                 print("   docker-compose up -d")
                 return
+
+            # Seed default admin user
+            result = await db.execute(select(User).where(User.email == "admin@mentorled.com"))
+            if not result.scalar_one_or_none():
+                admin_user = User(
+                    email="admin@mentorled.com",
+                    username="admin",
+                    full_name="Admin User",
+                    hashed_password=hash_password("admin123"),
+                    role=UserRole.ADMIN,
+                    is_active=True,
+                    is_verified=True,
+                )
+                db.add(admin_user)
+                await db.flush()
+                print("✅ Created admin user (admin@mentorled.com / admin123)")
+            else:
+                print("ℹ️  Admin user already exists")
 
             # Create a cohort
             cohort = Cohort(

@@ -1,5 +1,5 @@
 """
-Authentication API endpoints: register, login, token refresh.
+Authentication API endpoints: register, login, token refresh, user management.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,9 +11,12 @@ from app.models.user import User, UserRole
 from app.schemas.auth import (
     UserRegister,
     UserLogin,
+    LoginResponse,
     Token,
+    RefreshRequest,
     UserResponse,
     UserUpdate,
+    UserCreate,
     PasswordChange
 )
 from app.utils.auth import (
@@ -44,7 +47,7 @@ async def register(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Check if username already exists
     result = await db.execute(select(User).where(User.username == user_data.username))
     if result.scalar_one_or_none():
@@ -52,12 +55,12 @@ async def register(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already taken"
         )
-    
+
     # Check if this is the first user (make them admin)
     result = await db.execute(select(User))
     existing_users = result.scalars().all()
     is_first_user = len(existing_users) == 0
-    
+
     # Create new user
     new_user = User(
         email=user_data.email,
@@ -68,64 +71,66 @@ async def register(
         is_active=True,
         is_verified=is_first_user  # First user is auto-verified
     )
-    
+
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
-    
+
     return new_user
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=LoginResponse)
 async def login(
     credentials: UserLogin,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Login with username and password.
-    Returns access and refresh tokens.
+    Login with email and password.
+    Returns access and refresh tokens plus user data.
     """
-    # Find user by username
-    result = await db.execute(select(User).where(User.username == credentials.username))
+    # Find user by email
+    result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalar_one_or_none()
-    
+
     if not user or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
-    
+
     # Update last login
     user.last_login = datetime.utcnow()
     await db.commit()
-    
+    await db.refresh(user)
+
     # Create tokens
     token_data = {
         "user_id": str(user.id),
         "username": user.username,
         "role": user.role.value
     }
-    
+
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
-    
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "user": user
     }
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
-    refresh_token: str,
+    request: RefreshRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -136,40 +141,40 @@ async def refresh_token(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     # Decode refresh token
-    payload = decode_token(refresh_token)
+    payload = decode_token(request.refresh_token)
     if payload is None:
         raise credentials_exception
-    
+
     # Check token type
     if payload.get("type") != "refresh":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type"
         )
-    
+
     user_id = payload.get("user_id")
     if user_id is None:
         raise credentials_exception
-    
+
     # Get user
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if user is None or not user.is_active:
         raise credentials_exception
-    
+
     # Create new tokens
     token_data = {
         "user_id": str(user.id),
         "username": user.username,
         "role": user.role.value
     }
-    
+
     new_access_token = create_access_token(token_data)
     new_refresh_token = create_refresh_token(token_data)
-    
+
     return {
         "access_token": new_access_token,
         "refresh_token": new_refresh_token,
@@ -192,10 +197,10 @@ async def update_current_user(
     db: AsyncSession = Depends(get_db)
 ):
     """Update current user information"""
-    
+
     if user_update.full_name is not None:
         current_user.full_name = user_update.full_name
-    
+
     if user_update.email is not None:
         # Check if email is already taken by another user
         result = await db.execute(
@@ -207,10 +212,10 @@ async def update_current_user(
                 detail="Email already in use"
             )
         current_user.email = user_update.email
-    
+
     await db.commit()
     await db.refresh(current_user)
-    
+
     return current_user
 
 
@@ -221,18 +226,18 @@ async def change_password(
     db: AsyncSession = Depends(get_db)
 ):
     """Change current user password"""
-    
+
     # Verify current password
     if not verify_password(password_change.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect"
         )
-    
+
     # Update password
     current_user.hashed_password = hash_password(password_change.new_password)
     await db.commit()
-    
+
     return {"message": "Password changed successfully"}
 
 
@@ -242,9 +247,49 @@ async def list_users(
     db: AsyncSession = Depends(get_db)
 ):
     """List all users (admin only)"""
-    result = await db.execute(select(User))
+    result = await db.execute(select(User).order_by(User.created_at))
     users = result.scalars().all()
     return users
+
+
+@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    user_data: UserCreate,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new user (admin only)"""
+    # Check if email already exists
+    result = await db.execute(select(User).where(User.email == user_data.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+
+    # Check if username already exists
+    result = await db.execute(select(User).where(User.username == user_data.username))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+
+    new_user = User(
+        email=user_data.email,
+        username=user_data.username,
+        full_name=user_data.full_name,
+        hashed_password=hash_password(user_data.password),
+        role=user_data.role,
+        is_active=True,
+        is_verified=True,
+    )
+
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+
+    return new_user
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
@@ -255,16 +300,16 @@ async def update_user(
     db: AsyncSession = Depends(get_db)
 ):
     """Update user (admin only)"""
-    
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     if user_update.full_name is not None:
         user.full_name = user_update.full_name
     if user_update.email is not None:
@@ -273,8 +318,8 @@ async def update_user(
         user.role = user_update.role
     if user_update.is_active is not None:
         user.is_active = user_update.is_active
-    
+
     await db.commit()
     await db.refresh(user)
-    
+
     return user

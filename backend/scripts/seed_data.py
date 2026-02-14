@@ -39,7 +39,7 @@ from app.models.warning import Warning
 from app.models.risk_assessment import RiskAssessment
 from app.models.challenge import Challenge
 from app.models.challenge_track_config import ChallengeTrackConfig
-from app.core.security import get_password_hash
+from app.utils.auth import hash_password
 import secrets
 
 
@@ -149,7 +149,7 @@ async def create_admin_user(db: AsyncSession) -> User:
     admin = User(
         id=uuid4(),
         email="admin@mentorled.com",
-        hashed_password=get_password_hash("admin123"),
+        hashed_password=hash_password("admin123"),
         full_name="Program Manager",
         role=UserRole.ADMIN,
         is_active=True,
