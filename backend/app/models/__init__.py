@@ -16,6 +16,7 @@ from app.models.placement_match import PlacementMatch
 from app.models.decision import Decision
 from app.models.audit_log import AuditLog
 from app.models.user import User
+from app.models.email_template_override import EmailTemplateOverride
 
 __all__ = [
     "Cohort",
@@ -36,4 +37,5 @@ __all__ = [
     "Decision",
     "AuditLog",
     "User",
+    "EmailTemplateOverride",
 ]

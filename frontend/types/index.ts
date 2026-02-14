@@ -453,3 +453,44 @@ export interface PublicSubmissionResponse {
   challenge_title: string;
   submitted_at: string;
 }
+
+// Email Template types
+export interface EmailTemplateListItem {
+  key: string;
+  name: string;
+  description: string;
+  category: string;
+  default_subject: string;
+  has_override: boolean;
+  variable_count: number;
+}
+
+export interface EmailTemplateVariable {
+  name: string;
+  type: string;
+  description: string;
+  sample: any;
+}
+
+export interface EmailTemplateDetail {
+  key: string;
+  name: string;
+  description: string;
+  category: string;
+  default_subject: string;
+  current_subject: string;
+  default_content: string;
+  current_content: string;
+  has_override: boolean;
+  variables: EmailTemplateVariable[];
+  updated_at?: string;
+}
+
+export interface EmailConfigStatus {
+  enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_from_email: string;
+  smtp_from_name: string;
+  has_credentials: boolean;
+}

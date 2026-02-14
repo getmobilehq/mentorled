@@ -19,6 +19,7 @@ import {
   Layers,
   Flag,
   Calendar,
+  Mail,
 } from 'lucide-react';
 
 interface NavItem {
@@ -41,6 +42,7 @@ const navigation: NavItem[] = [
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Bulk Operations', href: '/bulk-operations', icon: Layers },
   { name: 'Placement', href: '/placement', icon: Briefcase },
+  { name: 'Email Templates', href: '/email-templates', icon: Mail },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

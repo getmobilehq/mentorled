@@ -285,6 +285,23 @@ export const challengesAPI = {
     api.get('/api/challenges/analytics', { params: { cohort_id: cohortId } }),
 };
 
+export const emailTemplatesAPI = {
+  list: () =>
+    api.get('/api/email-templates/'),
+  get: (key: string) =>
+    api.get(`/api/email-templates/${key}`),
+  getPreview: (key: string) =>
+    api.get(`/api/email-templates/${key}/preview`),
+  update: (key: string, data: { subject?: string; content: string }) =>
+    api.put(`/api/email-templates/${key}`, data),
+  revert: (key: string) =>
+    api.delete(`/api/email-templates/${key}/override`),
+  testSend: (key: string, data: { to_email: string }) =>
+    api.post(`/api/email-templates/${key}/test-send`, data),
+  getConfig: () =>
+    api.get('/api/email-templates/config'),
+};
+
 export const healthAPI = {
   check: () =>
     api.get('/health'),

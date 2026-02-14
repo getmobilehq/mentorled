@@ -7,6 +7,7 @@ from email.mime.multipart import MIMEMultipart
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pathlib import Path
 from typing import Dict, List, Optional
+from sqlalchemy import select
 import logging
 
 from app.config import settings
@@ -65,8 +66,12 @@ class EmailService:
             return False
 
         try:
-            # Render template
-            template = jinja_env.get_template(template_name)
+            # Check for DB override, fall back to disk template
+            override_content = await self._get_override(template_name)
+            if override_content:
+                template = jinja_env.from_string(override_content)
+            else:
+                template = jinja_env.get_template(template_name)
             context['subject'] = subject  # Make subject available to template
             html_content = template.render(**context)
 
@@ -101,6 +106,25 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send email to {to_email}: {str(e)}")
             return False
+
+    async def _get_override(self, template_name: str) -> Optional[str]:
+        """Check for a DB override for the given template. Returns content or None."""
+        try:
+            from app.database import AsyncSessionLocal
+            from app.models.email_template_override import EmailTemplateOverride
+
+            template_key = template_name.replace(".html", "")
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(EmailTemplateOverride.content).where(
+                        EmailTemplateOverride.template_key == template_key
+                    )
+                )
+                row = result.scalar_one_or_none()
+                return row
+        except Exception as e:
+            logger.debug(f"Could not check template override for {template_name}: {e}")
+            return None
 
     async def send_evaluation_result(
         self,
