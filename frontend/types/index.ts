@@ -494,3 +494,123 @@ export interface EmailConfigStatus {
   smtp_from_name: string;
   has_credentials: boolean;
 }
+
+// Team types
+export type TeamStatus = 'forming' | 'active' | 'completed';
+
+export interface Team {
+  id: string;
+  cohort_id: string;
+  name: string;
+  brief_title?: string | null;
+  brief_description?: string | null;
+  mentor_name?: string | null;
+  slack_channel?: string | null;
+  github_repo?: string | null;
+  status: TeamStatus;
+  created_at: string;
+}
+
+// Sprint & Fellowship Execution types
+export type SprintStatus = 'pending' | 'active' | 'completed';
+export type ObjectiveStatus = 'not_started' | 'in_progress' | 'done' | 'not_done';
+export type MeetingType = 'sprint_planning' | 'standup' | 'sprint_review' | 'sprint_retrospective';
+export type MeetingStatus = 'scheduled' | 'unlocked' | 'active' | 'completed';
+export type AttendanceStatus = 'present' | 'late' | 'very_late' | 'absent' | 'approved_absence';
+export type EvidenceType = 'github' | 'figma' | 'deployment' | 'video' | 'document';
+export type TeamMood = 'energized' | 'positive' | 'neutral' | 'tired' | 'frustrated';
+
+export interface Sprint {
+  id: string;
+  team_id: string;
+  sprint_number: number;
+  goal?: string | null;
+  status: SprintStatus;
+  start_date: string;
+  end_date: string;
+  completion_score?: number | null;
+  objective_count?: number;
+  completed_objectives?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SprintObjective {
+  id: string;
+  sprint_id: string;
+  description: string;
+  owner_role?: string;
+  owner_fellow_id?: string | null;
+  status: ObjectiveStatus;
+  evidence_url?: string | null;
+  evidence_type?: EvidenceType | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Meeting {
+  id: string;
+  sprint_id: string;
+  team_id: string;
+  meeting_type: MeetingType;
+  scheduled_at: string;
+  duration_minutes: number;
+  meeting_link?: string | null;
+  is_locked: boolean;
+  unlock_time?: string | null;
+  status: MeetingStatus;
+  created_at: string;
+}
+
+export interface Attendance {
+  id: string;
+  meeting_id: string;
+  fellow_id: string;
+  status: AttendanceStatus;
+  joined_at?: string | null;
+  minutes_late?: number | null;
+  approved_by?: string | null;
+  created_at: string;
+  meeting_type?: string;
+  scheduled_at?: string;
+}
+
+export interface Retrospective {
+  id: string;
+  sprint_id: string;
+  what_worked: string[];
+  what_didnt_work: string[];
+  what_to_improve: string[];
+  team_mood?: TeamMood;
+  sprint_rating?: number;
+  submitted_by?: string | null;
+  submitted_at?: string | null;
+  created_at: string;
+}
+
+export interface MeetingJoinResult {
+  meeting_link: string;
+  attendance_recorded: boolean;
+  status: AttendanceStatus;
+  minutes_late: number;
+}
+
+export interface AttendanceSummary {
+  fellow_id: string;
+  fellow_name: string;
+  role: string;
+  total_meetings: number;
+  present_count: number;
+  late_count: number;
+  very_late_count: number;
+  absent_count: number;
+  approved_absence_count: number;
+  attendance_score: number;
+}
+
+export interface TeamAttendanceSummary {
+  team_id: string;
+  team_average: number;
+  total_meetings: number;
+  members: AttendanceSummary[];
+}

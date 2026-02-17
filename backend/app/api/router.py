@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api import screening, applicants, cohorts, fellows, delivery, placement, microship, challenges, track_configs, check_ins, risk, warnings, bulk, analytics, auth, email_templates
+from app.api import screening, applicants, cohorts, fellows, delivery, placement, microship, challenges, track_configs, check_ins, risk, warnings, bulk, analytics, auth, email_templates, sprints, meetings, attendance, teams
 
 api_router = APIRouter()
 
@@ -20,3 +20,7 @@ api_router.include_router(warnings.router, tags=["Warnings"])
 api_router.include_router(bulk.router, tags=["Bulk Operations"])
 api_router.include_router(analytics.router, tags=["Analytics"])
 api_router.include_router(email_templates.router, tags=["Email Templates"])
+api_router.include_router(sprints.router, tags=["Sprints"])
+api_router.include_router(meetings.router, tags=["Meetings"])
+api_router.include_router(attendance.router, tags=["Attendance"])
+api_router.include_router(teams.router, tags=["Teams"])

@@ -17,6 +17,11 @@ from app.models.decision import Decision
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.email_template_override import EmailTemplateOverride
+from app.models.sprint import Sprint
+from app.models.sprint_objective import SprintObjective
+from app.models.meeting import Meeting
+from app.models.attendance import Attendance
+from app.models.retrospective import Retrospective
 
 __all__ = [
     "Cohort",
@@ -38,4 +43,9 @@ __all__ = [
     "AuditLog",
     "User",
     "EmailTemplateOverride",
+    "Sprint",
+    "SprintObjective",
+    "Meeting",
+    "Attendance",
+    "Retrospective",
 ]

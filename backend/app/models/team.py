@@ -38,3 +38,13 @@ class Team(Base):
         back_populates="team",
         cascade="all, delete-orphan"
     )
+    sprints: Mapped[List["Sprint"]] = relationship(
+        "Sprint",
+        back_populates="team",
+        cascade="all, delete-orphan"
+    )
+    meetings: Mapped[List["Meeting"]] = relationship(
+        "Meeting",
+        back_populates="team",
+        cascade="all, delete-orphan"
+    )

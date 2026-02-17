@@ -20,6 +20,7 @@ import {
   Flag,
   Calendar,
   Mail,
+  Repeat,
 } from 'lucide-react';
 
 interface NavItem {
@@ -36,6 +37,7 @@ const navigation: NavItem[] = [
   { name: 'Challenges', href: '/challenges', icon: Flag },
   { name: 'Microship', href: '/microship', icon: Target },
   { name: 'Fellows', href: '/fellows', icon: TrendingUp },
+  { name: 'Sprint Board', href: '/sprints', icon: Repeat },
   { name: 'Check-ins', href: '/check-ins', icon: Activity },
   { name: 'Risk Dashboard', href: '/risk', icon: AlertTriangle },
   { name: 'Delivery', href: '/delivery', icon: Shield },

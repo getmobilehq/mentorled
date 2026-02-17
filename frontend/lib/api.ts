@@ -339,6 +339,69 @@ export const emailTemplatesAPI = {
     api.get('/api/email-templates/config'),
 };
 
+export const teamsAPI = {
+  list: (cohortId?: string) =>
+    api.get('/api/teams/', { params: { cohort_id: cohortId } }),
+};
+
+export const sprintsAPI = {
+  list: (teamId?: string, cohortId?: string) =>
+    api.get('/api/sprints/', { params: { team_id: teamId, cohort_id: cohortId } }),
+  get: (id: string) =>
+    api.get(`/api/sprints/${id}`),
+  create: (data: { team_id: string; sprint_number: number; goal?: string; start_date: string; end_date: string }) =>
+    api.post('/api/sprints/', data),
+  update: (id: string, data: { goal?: string; status?: string; completion_score?: number }) =>
+    api.put(`/api/sprints/${id}`, data),
+  updateStatus: (id: string, status: string) =>
+    api.patch(`/api/sprints/${id}/status`, { status }),
+  generate: (teamId: string) =>
+    api.post(`/api/sprints/generate/${teamId}`),
+  getObjectives: (sprintId: string) =>
+    api.get(`/api/sprints/${sprintId}/objectives`),
+  createObjective: (data: { sprint_id: string; description: string; owner_role?: string; owner_fellow_id?: string }) =>
+    api.post('/api/sprints/objectives', data),
+  updateObjective: (id: string, data: { description?: string; status?: string; evidence_url?: string; evidence_type?: string }) =>
+    api.put(`/api/sprints/objectives/${id}`, data),
+  deleteObjective: (id: string) =>
+    api.delete(`/api/sprints/objectives/${id}`),
+};
+
+export const meetingsAPI = {
+  list: (teamId?: string, sprintId?: string, status?: string, meetingType?: string) =>
+    api.get('/api/meetings/', { params: { team_id: teamId, sprint_id: sprintId, status, meeting_type: meetingType } }),
+  get: (id: string) =>
+    api.get(`/api/meetings/${id}`),
+  join: (meetingId: string, fellowId: string) =>
+    api.post(`/api/meetings/${meetingId}/join?fellow_id=${fellowId}`),
+  upcoming: (teamId?: string, days?: number) =>
+    api.get('/api/meetings/upcoming', { params: { team_id: teamId, days } }),
+};
+
+export const attendanceAPI = {
+  getFellowHistory: (fellowId: string) =>
+    api.get(`/api/attendance/fellow/${fellowId}`),
+  getTeamSummary: (teamId: string) =>
+    api.get(`/api/attendance/team/${teamId}`),
+  approveAbsence: (meetingId: string, fellowId: string) =>
+    api.post(`/api/attendance/${meetingId}/approve-absence`, { fellow_id: fellowId }),
+};
+
+export const retrospectivesAPI = {
+  submit: (data: {
+    sprint_id: string;
+    what_worked: string[];
+    what_didnt_work: string[];
+    what_to_improve: string[];
+    team_mood?: string;
+    sprint_rating?: number;
+    submitted_by?: string;
+  }) =>
+    api.post('/api/sprints/retrospectives', data),
+  getForSprint: (sprintId: string) =>
+    api.get(`/api/sprints/retrospectives/sprint/${sprintId}`),
+};
+
 export const healthAPI = {
   check: () =>
     api.get('/health'),

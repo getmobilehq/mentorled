@@ -78,3 +78,8 @@ class Fellow(Base):
         back_populates="fellow",
         cascade="all, delete-orphan"
     )
+    attendance_records: Mapped[List["Attendance"]] = relationship(
+        "Attendance",
+        back_populates="fellow",
+        cascade="all, delete-orphan"
+    )
