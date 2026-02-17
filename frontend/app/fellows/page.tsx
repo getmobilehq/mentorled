@@ -7,7 +7,7 @@ import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { fellowsAPI, deliveryAPI, checkInsAPI, riskAPI, cohortsAPI } from '@/lib/api';
+import { fellowsAPI, deliveryAPI, checkInsAPI, riskAPI, cohortsAPI, attendanceAPI, teamsAPI } from '@/lib/api';
 import {
   Users,
   TrendingUp,
@@ -17,8 +17,9 @@ import {
   Shield,
   Eye,
   Search,
+  Calendar,
 } from 'lucide-react';
-import type { Fellow, RiskAssessment, Cohort, CheckIn, RiskAssessmentDetail } from '@/types';
+import type { Fellow, RiskAssessment, Cohort, CheckIn, RiskAssessmentDetail, Team, Attendance } from '@/types';
 
 export default function FellowsPage() {
   const [fellows, setFellows] = useState<Fellow[]>([]);
@@ -33,15 +34,20 @@ export default function FellowsPage() {
   const [selectedCohortId, setSelectedCohortId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Teams lookup
+  const [teams, setTeams] = useState<Team[]>([]);
+
   // Detail modal
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailFellow, setDetailFellow] = useState<Fellow | null>(null);
   const [fellowCheckIns, setFellowCheckIns] = useState<CheckIn[]>([]);
   const [fellowRiskHistory, setFellowRiskHistory] = useState<RiskAssessmentDetail[]>([]);
+  const [fellowAttendance, setFellowAttendance] = useState<Attendance[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   useEffect(() => {
     fetchCohorts();
+    fetchTeams();
   }, []);
 
   useEffect(() => {
@@ -54,6 +60,15 @@ export default function FellowsPage() {
       setCohorts(response.data);
     } catch (error) {
       console.error('Error fetching cohorts:', error);
+    }
+  };
+
+  const fetchTeams = async () => {
+    try {
+      const response = await teamsAPI.list();
+      setTeams(response.data);
+    } catch (error) {
+      console.error('Error fetching teams:', error);
     }
   };
 
@@ -90,12 +105,14 @@ export default function FellowsPage() {
     setLoadingDetail(true);
 
     try {
-      const [checkInsRes, riskRes] = await Promise.all([
+      const [checkInsRes, riskRes, attRes] = await Promise.all([
         checkInsAPI.getFellowCheckIns(fellow.id).catch(() => ({ data: [] })),
         riskAPI.getFellowHistory(fellow.id).catch(() => ({ data: [] })),
+        attendanceAPI.getFellowHistory(fellow.id).catch(() => ({ data: [] })),
       ]);
       setFellowCheckIns(checkInsRes.data);
       setFellowRiskHistory(riskRes.data);
+      setFellowAttendance(attRes.data);
     } catch (error) {
       console.error('Error fetching fellow details:', error);
     } finally {
@@ -321,7 +338,9 @@ export default function FellowsPage() {
                       </TableCell>
                       <TableCell>
                         {fellow.team_id ? (
-                          <Badge variant="info">Team {fellow.team_id.slice(0, 8)}</Badge>
+                          <Badge variant="info">
+                            {teams.find(t => t.id === fellow.team_id)?.name || 'Team'}
+                          </Badge>
                         ) : (
                           <span className="text-gray-400">No team</span>
                         )}
@@ -555,6 +574,77 @@ export default function FellowsPage() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Attendance History */}
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3">Attendance History</h4>
+                {fellowAttendance.length === 0 ? (
+                  <p className="text-sm text-gray-500">No attendance records yet.</p>
+                ) : (
+                  <div>
+                    {/* Attendance summary */}
+                    {(() => {
+                      const total = fellowAttendance.length;
+                      const present = fellowAttendance.filter(a => a.status === 'present').length;
+                      const late = fellowAttendance.filter(a => a.status === 'late').length;
+                      const veryLate = fellowAttendance.filter(a => a.status === 'very_late').length;
+                      const absent = fellowAttendance.filter(a => a.status === 'absent').length;
+                      const scoreMap: Record<string, number> = { present: 1.0, late: 0.8, very_late: 0.5, absent: 0.0, approved_absence: 0.7 };
+                      const avgScore = total > 0 ? fellowAttendance.reduce((sum, a) => sum + (scoreMap[a.status] ?? 0.5), 0) / total : 0;
+                      return (
+                        <div className="grid grid-cols-5 gap-2 mb-3">
+                          <div className="rounded-lg bg-green-50 p-2 text-center">
+                            <p className="text-xs text-green-700">Present</p>
+                            <p className="text-lg font-bold text-green-600">{present}</p>
+                          </div>
+                          <div className="rounded-lg bg-yellow-50 p-2 text-center">
+                            <p className="text-xs text-yellow-700">Late</p>
+                            <p className="text-lg font-bold text-yellow-600">{late}</p>
+                          </div>
+                          <div className="rounded-lg bg-orange-50 p-2 text-center">
+                            <p className="text-xs text-orange-700">Very Late</p>
+                            <p className="text-lg font-bold text-orange-600">{veryLate}</p>
+                          </div>
+                          <div className="rounded-lg bg-red-50 p-2 text-center">
+                            <p className="text-xs text-red-700">Absent</p>
+                            <p className="text-lg font-bold text-red-600">{absent}</p>
+                          </div>
+                          <div className="rounded-lg bg-blue-50 p-2 text-center">
+                            <p className="text-xs text-blue-700">Score</p>
+                            <p className={`text-lg font-bold ${avgScore >= 0.9 ? 'text-green-600' : avgScore >= 0.7 ? 'text-yellow-600' : 'text-red-600'}`}>
+                              {(avgScore * 100).toFixed(0)}%
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      {fellowAttendance.slice(0, 12).map((att) => (
+                        <div key={att.id} className="flex items-center justify-between rounded border px-3 py-1.5 text-sm">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-3 w-3 text-gray-400" />
+                            <span className="text-gray-600 capitalize">{att.meeting_type?.replace('_', ' ') || 'Meeting'}</span>
+                            {att.scheduled_at && (
+                              <span className="text-xs text-gray-400">{new Date(att.scheduled_at).toLocaleDateString()}</span>
+                            )}
+                          </div>
+                          <Badge
+                            variant={
+                              att.status === 'present' ? 'success' :
+                              att.status === 'late' ? 'warning' :
+                              att.status === 'very_late' ? 'warning' :
+                              att.status === 'absent' ? 'danger' : 'default'
+                            }
+                          >
+                            {att.status.replace('_', ' ')}
+                            {att.minutes_late ? ` (${att.minutes_late}m)` : ''}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { applicantsAPI, screeningAPI, healthAPI, analyticsAPI, challengesAPI } from '@/lib/api';
+import { applicantsAPI, screeningAPI, healthAPI, analyticsAPI, challengesAPI, teamsAPI, sprintsAPI, meetingsAPI } from '@/lib/api';
 import {
   Users,
   ClipboardCheck,
@@ -17,9 +17,12 @@ import {
   Flag,
   Calendar,
   ArrowRight,
+  Repeat,
+  Target,
+  Clock,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { Applicant, QueueStats, HealthCheck, ChallengeAnalytics } from '@/types';
+import type { Applicant, QueueStats, HealthCheck, ChallengeAnalytics, Team, Sprint, Meeting } from '@/types';
 
 interface AnalyticsDashboard {
   applicants: { total: number; by_status: Record<string, number>; by_role: Record<string, number> };
@@ -48,19 +51,27 @@ export default function Dashboard() {
   const [challengeAnalytics, setChallengeAnalytics] = useState<ChallengeAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Fellowship execution state
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      const [applicantsRes, queueRes, healthRes, dashboardRes, funnelRes, challengeRes] = await Promise.all([
+      const [applicantsRes, queueRes, healthRes, dashboardRes, funnelRes, challengeRes, teamsRes, sprintsRes, meetingsRes] = await Promise.all([
         applicantsAPI.list(),
         screeningAPI.getQueue(),
         healthAPI.check(),
         analyticsAPI.getDashboard().catch(() => null),
         analyticsAPI.getConversionFunnel().catch(() => null),
         challengesAPI.getAnalytics().catch(() => null),
+        teamsAPI.list().catch(() => ({ data: [] })),
+        sprintsAPI.list().catch(() => ({ data: [] })),
+        meetingsAPI.upcoming(undefined, 7).catch(() => ({ data: [] })),
       ]);
 
       setApplicants(applicantsRes.data);
@@ -69,6 +80,9 @@ export default function Dashboard() {
       if (dashboardRes) setDashboard(dashboardRes.data);
       if (funnelRes) setFunnel(funnelRes.data);
       if (challengeRes) setChallengeAnalytics(challengeRes.data);
+      setTeams(teamsRes.data);
+      setSprints(sprintsRes.data);
+      setUpcomingMeetings(meetingsRes.data);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -199,6 +213,96 @@ export default function Dashboard() {
             </Card>
           )}
 
+          {/* Fellowship Execution Section */}
+          {sprints.length > 0 && (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {/* Active Sprints */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>Active Sprints</CardTitle>
+                    <Link href="/sprints">
+                      <Button variant="ghost" size="sm">Sprint Board</Button>
+                    </Link>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const activeSprints = sprints.filter(s => s.status === 'active');
+                    if (activeSprints.length === 0) {
+                      return <p className="text-center text-sm text-gray-500 py-4">No active sprints</p>;
+                    }
+                    return (
+                      <div className="space-y-3">
+                        {activeSprints.map(sprint => {
+                          const team = teams.find(t => t.id === sprint.team_id);
+                          const progressPct = sprint.objective_count
+                            ? Math.round(((sprint.completed_objectives || 0) / sprint.objective_count) * 100)
+                            : 0;
+                          return (
+                            <div key={sprint.id} className="rounded-lg border border-gray-200 p-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-semibold text-gray-900">
+                                  {team?.name || 'Team'} — Sprint {sprint.sprint_number}
+                                </span>
+                                <Badge variant="info">{sprint.status}</Badge>
+                              </div>
+                              {sprint.goal && (
+                                <p className="text-xs text-gray-500 mb-2 truncate">{sprint.goal}</p>
+                              )}
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className="h-2 rounded-full bg-green-500 transition-all"
+                                    style={{ width: `${progressPct}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-medium text-gray-600">
+                                  {sprint.completed_objectives || 0}/{sprint.objective_count || 0}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+
+              {/* Fellowship Overview */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Fellowship Overview</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <p className="text-sm font-medium text-green-900">Active Teams</p>
+                      <p className="mt-1 text-2xl font-bold text-green-600">
+                        {teams.filter(t => t.status === 'active').length}
+                      </p>
+                    </div>
+                    <div className="text-center p-3 bg-blue-50 rounded-lg">
+                      <p className="text-sm font-medium text-blue-900">Total Sprints</p>
+                      <p className="mt-1 text-2xl font-bold text-blue-600">{sprints.length}</p>
+                    </div>
+                    <div className="text-center p-3 bg-purple-50 rounded-lg">
+                      <p className="text-sm font-medium text-purple-900">Completed</p>
+                      <p className="mt-1 text-2xl font-bold text-purple-600">
+                        {sprints.filter(s => s.status === 'completed').length}
+                      </p>
+                    </div>
+                    <div className="text-center p-3 bg-orange-50 rounded-lg">
+                      <p className="text-sm font-medium text-orange-900">Upcoming Meetings</p>
+                      <p className="mt-1 text-2xl font-bold text-orange-600">{upcomingMeetings.length}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
           {/* Two column layout */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Recent Applicants */}
@@ -327,6 +431,12 @@ export default function Dashboard() {
                       <Button variant="secondary" className="w-full justify-start">
                         <Calendar className="mr-2 h-5 w-5" />
                         Manage Cohorts
+                      </Button>
+                    </Link>
+                    <Link href="/sprints" className="block">
+                      <Button variant="secondary" className="w-full justify-start">
+                        <Repeat className="mr-2 h-5 w-5" />
+                        Sprint Board
                       </Button>
                     </Link>
                     <Link href="/risk" className="block">

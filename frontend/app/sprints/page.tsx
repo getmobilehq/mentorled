@@ -9,16 +9,16 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { AppLayout } from '@/components/layout/AppLayout';
 import {
-  teamsAPI, sprintsAPI, meetingsAPI, attendanceAPI, retrospectivesAPI, cohortsAPI,
+  teamsAPI, sprintsAPI, meetingsAPI, attendanceAPI, retrospectivesAPI, cohortsAPI, fellowsAPI,
 } from '@/lib/api';
 import {
   Repeat, Target, Calendar, Clock, CheckCircle, Users,
   ArrowRight, ExternalLink, Plus, Pencil, Trash2, AlertTriangle,
-  ThumbsUp, ThumbsDown, Lightbulb, Star,
+  ThumbsUp, ThumbsDown, Lightbulb, Star, Zap,
 } from 'lucide-react';
 import type {
   Team, Sprint, SprintObjective, Meeting, Retrospective,
-  AttendanceSummary, TeamAttendanceSummary, Cohort,
+  AttendanceSummary, TeamAttendanceSummary, Cohort, Fellow,
   ObjectiveStatus, EvidenceType,
 } from '@/types';
 
@@ -68,12 +68,18 @@ export default function SprintBoardPage() {
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
   const [selectedSprintId, setSelectedSprintId] = useState<string>('');
 
+  // Team fellows
+  const [teamFellows, setTeamFellows] = useState<Fellow[]>([]);
+
   // Sprint detail data
   const [objectives, setObjectives] = useState<SprintObjective[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [attendanceSummary, setAttendanceSummary] = useState<TeamAttendanceSummary | null>(null);
   const [retrospective, setRetrospective] = useState<Retrospective | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Generate sprints
+  const [generating, setGenerating] = useState(false);
 
   // Tabs
   const [activeTab, setActiveTab] = useState('objectives');
@@ -105,13 +111,15 @@ export default function SprintBoardPage() {
     fetchTeams();
   }, [selectedCohortId]);
 
-  // Reload sprints when team changes
+  // Reload sprints and fellows when team changes
   useEffect(() => {
     if (selectedTeamId) {
       fetchSprints();
+      fetchTeamFellows();
     } else {
       setSprints([]);
       setSelectedSprintId('');
+      setTeamFellows([]);
     }
   }, [selectedTeamId]);
 
@@ -158,6 +166,28 @@ export default function SprintBoardPage() {
       }
     } catch (error) {
       console.error('Error fetching teams:', error);
+    }
+  };
+
+  const fetchTeamFellows = async () => {
+    try {
+      const res = await fellowsAPI.list();
+      setTeamFellows(res.data.filter((f: Fellow) => f.team_id === selectedTeamId));
+    } catch (error) {
+      console.error('Error fetching fellows:', error);
+    }
+  };
+
+  const handleGenerateSprints = async () => {
+    if (!selectedTeamId) return;
+    setGenerating(true);
+    try {
+      await sprintsAPI.generate(selectedTeamId);
+      await fetchSprints();
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Failed to generate sprints');
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -404,6 +434,21 @@ export default function SprintBoardPage() {
           </Card>
         )}
 
+        {/* Generate Sprints (when team selected but no sprints) */}
+        {selectedTeamId && sprints.length === 0 && !loading && (
+          <Card>
+            <div className="py-8 text-center">
+              <Repeat className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No sprints yet</h3>
+              <p className="mt-1 text-sm text-gray-500">Generate 6 sprints with meetings for this team.</p>
+              <Button className="mt-4" onClick={handleGenerateSprints} disabled={generating}>
+                <Zap className="mr-2 h-4 w-4" />
+                {generating ? 'Generating...' : 'Generate Sprints'}
+              </Button>
+            </div>
+          </Card>
+        )}
+
         {/* Sprint Timeline */}
         {sprints.length > 0 && (
           <div className="flex gap-3 overflow-x-auto pb-2">
@@ -563,6 +608,9 @@ export default function SprintBoardPage() {
                 </TabsTrigger>
                 <TabsTrigger value="attendance" active={activeTab === 'attendance'} onClick={() => setActiveTab('attendance')}>
                   Attendance
+                </TabsTrigger>
+                <TabsTrigger value="team" active={activeTab === 'team'} onClick={() => setActiveTab('team')}>
+                  Team ({teamFellows.length})
                 </TabsTrigger>
                 {selectedSprint.status === 'completed' && (
                   <TabsTrigger value="retrospective" active={activeTab === 'retrospective'} onClick={() => setActiveTab('retrospective')}>
@@ -797,6 +845,102 @@ export default function SprintBoardPage() {
                               </TableCell>
                             </TableRow>
                           ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Team Tab */}
+              <TabsContent value="team" activeValue={activeTab}>
+                <Card padding={false}>
+                  <CardHeader className="px-6 pt-6">
+                    <CardTitle>Team Members</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-0">
+                    {teamFellows.length === 0 ? (
+                      <div className="py-12 text-center">
+                        <Users className="mx-auto h-12 w-12 text-gray-400" />
+                        <h3 className="mt-2 text-sm font-medium text-gray-900">No team members</h3>
+                        <p className="mt-1 text-sm text-gray-500">No fellows are assigned to this team yet.</p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Fellow</TableHead>
+                            <TableHead>Role</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Attendance</TableHead>
+                            <TableHead>Objectives Owned</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {teamFellows.map((fellow) => {
+                            const memberAttendance = attendanceSummary?.members.find(
+                              m => m.fellow_id === fellow.id
+                            );
+                            const ownedObjectives = objectives.filter(
+                              o => o.owner_fellow_id === fellow.id
+                            );
+                            return (
+                              <TableRow key={fellow.id}>
+                                <TableCell>
+                                  <div>
+                                    <p className="font-medium text-gray-900">{fellow.name || 'Unknown'}</p>
+                                    <p className="text-xs text-gray-500">{fellow.email || ''}</p>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary">{fellow.role || '-'}</Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={getStatusBadgeVariant(fellow.status)}>
+                                    {fellow.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {memberAttendance ? (
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-16 bg-gray-200 rounded-full h-2">
+                                        <div
+                                          className={`h-2 rounded-full ${
+                                            memberAttendance.attendance_score >= 0.9 ? 'bg-green-500' :
+                                            memberAttendance.attendance_score >= 0.7 ? 'bg-yellow-500' : 'bg-red-500'
+                                          }`}
+                                          style={{ width: `${memberAttendance.attendance_score * 100}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-sm font-semibold">
+                                        {(memberAttendance.attendance_score * 100).toFixed(0)}%
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-sm text-gray-400">No data</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {ownedObjectives.length > 0 ? (
+                                    <div className="space-y-1">
+                                      {ownedObjectives.map(obj => (
+                                        <div key={obj.id} className="flex items-center gap-2">
+                                          <Badge variant={OBJECTIVE_STATUS_COLORS[obj.status] || 'default'} className="text-xs">
+                                            {OBJECTIVE_STATUS_LABELS[obj.status]}
+                                          </Badge>
+                                          <span className="text-xs text-gray-600 truncate max-w-[200px]">
+                                            {obj.description}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-sm text-gray-400">None</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     )}
