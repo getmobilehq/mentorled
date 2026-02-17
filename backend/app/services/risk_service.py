@@ -1,25 +1,59 @@
-"""Risk Detection Service for Fellows."""
+"""
+Multi-Signal Risk Assessment Service for Fellows.
+
+Implements the 7-signal weighted risk scoring system from the Fellowship Execution spec.
+Signals are PERFORMANCE scores (1.0 = excellent, 0.0 = failing).
+Risk levels: ON_TRACK (0.70-1.00), MONITOR (0.50-0.69), AT_RISK (0.30-0.49), CRITICAL (0.00-0.29)
+"""
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
-from datetime import datetime, timedelta
+from sqlalchemy.orm import selectinload
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from uuid import UUID
 
 from app.models.fellow import Fellow
 from app.models.check_in import CheckIn
 from app.models.risk_assessment import RiskAssessment, RiskLevel
+from app.models.attendance import Attendance, AttendanceStatus
+from app.models.sprint import Sprint, SprintStatus
+from app.models.sprint_objective import SprintObjective, ObjectiveStatus
+from app.models.team import Team
+
+
+# Signal weights (must total 1.00)
+SIGNAL_WEIGHTS = {
+    "attendance_score": 0.20,
+    "check_in_sentiment": 0.15,
+    "check_in_completeness": 0.10,
+    "sprint_delivery": 0.25,
+    "evidence_submission": 0.15,
+    "mentor_flags": 0.10,
+    "trend": 0.05,
+}
+
+# Attendance status scores (performance-based: 1.0 = best)
+ATTENDANCE_STATUS_SCORES = {
+    AttendanceStatus.PRESENT.value: 1.0,
+    AttendanceStatus.LATE.value: 0.8,
+    AttendanceStatus.VERY_LATE.value: 0.5,
+    AttendanceStatus.ABSENT.value: 0.0,
+    AttendanceStatus.APPROVED_ABSENCE.value: 0.7,
+    "present": 1.0,
+    "late": 0.8,
+    "very_late": 0.5,
+    "absent": 0.0,
+    "approved_absence": 0.7,
+}
 
 
 class RiskDetectionService:
     """
-    Service for detecting and assessing fellow risk levels.
+    7-signal weighted risk assessment service.
 
-    Combines multiple signals to calculate comprehensive risk scores:
-    - Check-in patterns (frequency, sentiment, risk contributions)
-    - Milestone performance
-    - Warning history
-    - Team collaboration ratings
-    - Energy levels
+    Each signal is normalized to 0.0-1.0 (higher = better performance).
+    Weighted sum produces an overall performance score.
+    Risk level is determined from performance score thresholds.
     """
 
     def __init__(self, db: AsyncSession):
@@ -27,281 +61,345 @@ class RiskDetectionService:
 
     async def assess_fellow_risk(self, fellow_id: UUID, week: int) -> Dict[str, Any]:
         """
-        Perform comprehensive risk assessment for a fellow.
+        Perform comprehensive 7-signal risk assessment for a fellow.
 
-        Args:
-            fellow_id: Fellow's UUID
-            week: Current program week
-
-        Returns:
-            Dictionary with risk assessment data
+        Returns dict with: risk_score (0-1, higher=better), risk_level, signals, concerns, recommended_action
         """
-        # Get fellow data
-        result = await self.db.execute(select(Fellow).filter(Fellow.id == fellow_id))
+        result = await self.db.execute(
+            select(Fellow).options(selectinload(Fellow.applicant)).filter(Fellow.id == fellow_id)
+        )
         fellow = result.scalar_one_or_none()
-
         if not fellow:
             raise ValueError(f"Fellow {fellow_id} not found")
 
-        # Gather signals
-        signals = await self._gather_risk_signals(fellow, week)
+        # Gather all 7 signals
+        signals = {}
+        signals["attendance_score"] = await self._calc_attendance_signal(fellow)
+        signals["check_in_sentiment"] = await self._calc_sentiment_signal(fellow, week)
+        signals["check_in_completeness"] = await self._calc_completeness_signal(fellow, week)
+        signals["sprint_delivery"] = await self._calc_delivery_signal(fellow)
+        signals["evidence_submission"] = await self._calc_evidence_signal(fellow)
+        signals["mentor_flags"] = self._calc_mentor_flags_signal(fellow)
+        signals["trend"] = await self._calc_trend_signal(fellow)
 
-        # Calculate risk score (0.0 to 1.0)
-        risk_score = self._calculate_risk_score(signals)
+        # Calculate weighted performance score
+        risk_score = sum(
+            signals[key] * SIGNAL_WEIGHTS[key] for key in SIGNAL_WEIGHTS
+        )
+        risk_score = round(min(max(risk_score, 0.0), 1.0), 2)
 
         # Determine risk level
         risk_level = self._determine_risk_level(risk_score)
 
-        # Identify concerns
-        concerns = self._identify_concerns(signals)
+        # Generate concerns for at_risk/critical
+        concerns = self._generate_concerns(signals, risk_level)
 
-        # Recommend action
-        recommended_action = self._recommend_action(risk_level, concerns, signals)
+        # Detect patterns
+        patterns = await self._detect_patterns(fellow_id)
+
+        # Recommended action
+        recommended_action = self._recommend_action(risk_level, fellow.warnings_count)
 
         return {
-            'risk_score': risk_score,
-            'risk_level': risk_level,
-            'signals': signals,
-            'concerns': concerns,
-            'recommended_action': recommended_action,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "signals": signals,
+            "concerns": concerns,
+            "patterns": patterns,
+            "recommended_action": recommended_action,
         }
 
-    async def _gather_risk_signals(self, fellow: Fellow, week: int) -> Dict[str, Any]:
-        """Gather all risk signals for a fellow."""
-        signals = {}
+    # --- Signal Calculations ---
 
-        # 1. Check-in signals (last 3 weeks)
-        recent_check_ins = await self._get_recent_check_ins(fellow.id, week, lookback=3)
-        signals['check_in_frequency'] = len(recent_check_ins) / 3.0  # Expect 1 per week
+    async def _calc_attendance_signal(self, fellow: Fellow) -> float:
+        """Signal 1: Attendance Score (20% weight). Last 14 days of attendance."""
+        result = await self.db.execute(
+            select(Attendance).filter(Attendance.fellow_id == fellow.id)
+        )
+        records = result.scalars().all()
 
-        if recent_check_ins:
-            # Average sentiment from recent check-ins
-            sentiments = [ci.sentiment_score for ci in recent_check_ins if ci.sentiment_score is not None]
-            signals['avg_sentiment'] = sum(sentiments) / len(sentiments) if sentiments else None
+        if not records:
+            return 0.5  # Neutral if no data
 
-            # Average risk contribution from check-ins
-            risk_contributions = [ci.risk_contribution for ci in recent_check_ins if ci.risk_contribution is not None]
-            signals['avg_check_in_risk'] = sum(risk_contributions) / len(risk_contributions) if risk_contributions else None
+        total = sum(
+            ATTENDANCE_STATUS_SCORES.get(
+                r.status.value if hasattr(r.status, "value") else r.status, 0.5
+            )
+            for r in records
+        )
+        return round(total / len(records), 2)
 
-            # Recent energy levels
-            energy_levels = [ci.energy_level for ci in recent_check_ins if ci.energy_level is not None]
-            signals['avg_energy'] = sum(energy_levels) / len(energy_levels) if energy_levels else None
-
-            # Collaboration ratings
-            collab_ratings = [ci.collaboration_rating for ci in recent_check_ins if ci.collaboration_rating]
-            struggling_count = sum(1 for r in collab_ratings if r == 'struggling')
-            signals['collaboration_issues'] = struggling_count / len(collab_ratings) if collab_ratings else 0.0
-
-            # Self-assessment trend
-            self_assessments = [ci.self_assessment for ci in recent_check_ins if ci.self_assessment]
-            below_count = sum(1 for a in self_assessments if a == 'below')
-            signals['below_expectations_rate'] = below_count / len(self_assessments) if self_assessments else 0.0
-        else:
-            signals['avg_sentiment'] = None
-            signals['avg_check_in_risk'] = None
-            signals['avg_energy'] = None
-            signals['collaboration_issues'] = 0.0
-            signals['below_expectations_rate'] = 0.0
-
-        # 2. Milestone performance
-        milestone_scores = []
-        if fellow.milestone_1_score is not None:
-            milestone_scores.append(float(fellow.milestone_1_score))
-        if fellow.milestone_2_score is not None:
-            milestone_scores.append(float(fellow.milestone_2_score))
-        if fellow.milestone_3_score is not None:
-            milestone_scores.append(float(fellow.milestone_3_score))
-
-        signals['milestone_avg'] = sum(milestone_scores) / len(milestone_scores) if milestone_scores else None
-        signals['milestone_count'] = len(milestone_scores)
-
-        # 3. Warning history
-        signals['warnings_count'] = fellow.warnings_count
-
-        # 4. Previous risk assessments trend
-        prev_assessments = await self._get_recent_risk_assessments(fellow.id, week, lookback=2)
-        if prev_assessments:
-            signals['prev_risk_trend'] = [float(ra.risk_score) for ra in prev_assessments]
-            signals['risk_increasing'] = self._is_risk_increasing(signals['prev_risk_trend'])
-        else:
-            signals['prev_risk_trend'] = []
-            signals['risk_increasing'] = False
-
-        return signals
-
-    async def _get_recent_check_ins(self, fellow_id: UUID, current_week: int, lookback: int = 3) -> List[CheckIn]:
-        """Get recent check-ins for a fellow."""
+    async def _calc_sentiment_signal(self, fellow: Fellow, week: int) -> float:
+        """Signal 2: Check-in Sentiment (15% weight). Latest check-in sentiment."""
         result = await self.db.execute(
             select(CheckIn)
-            .filter(
-                CheckIn.fellow_id == fellow_id,
-                CheckIn.week >= current_week - lookback,
-                CheckIn.week <= current_week
-            )
+            .filter(CheckIn.fellow_id == fellow.id, CheckIn.week <= week)
             .order_by(desc(CheckIn.week))
+            .limit(3)
         )
-        return result.scalars().all()
+        check_ins = result.scalars().all()
 
-    async def _get_recent_risk_assessments(self, fellow_id: UUID, current_week: int, lookback: int = 2) -> List[RiskAssessment]:
-        """Get recent risk assessments for a fellow."""
+        if not check_ins:
+            return 0.5
+
+        sentiments = [
+            ci.sentiment_score for ci in check_ins if ci.sentiment_score is not None
+        ]
+        if not sentiments:
+            return 0.5
+
+        # sentiment_score ranges -1 to 1 in current model. Normalize to 0-1.
+        avg = sum(float(s) for s in sentiments) / len(sentiments)
+        return round(max(0.0, min(1.0, (avg + 1.0) / 2.0)), 2)
+
+    async def _calc_completeness_signal(self, fellow: Fellow, week: int) -> float:
+        """Signal 3: Check-in Completeness (10% weight). Submitted / expected ratio."""
+        if week <= 0:
+            return 0.5
+
+        result = await self.db.execute(
+            select(func.count()).select_from(CheckIn).filter(
+                CheckIn.fellow_id == fellow.id
+            )
+        )
+        submitted = result.scalar() or 0
+        return round(min(submitted / week, 1.0), 2)
+
+    async def _calc_delivery_signal(self, fellow: Fellow) -> float:
+        """Signal 4: Sprint Delivery (25% weight). Most recent completed sprint's score."""
+        if not fellow.team_id:
+            return 0.5
+
+        result = await self.db.execute(
+            select(Sprint)
+            .filter(
+                Sprint.team_id == fellow.team_id,
+                Sprint.status == SprintStatus.COMPLETED,
+            )
+            .order_by(desc(Sprint.sprint_number))
+            .limit(1)
+        )
+        sprint = result.scalar_one_or_none()
+
+        if not sprint or sprint.completion_score is None:
+            return 0.5
+
+        # completion_score is 0-100, normalize to 0-1
+        score = float(sprint.completion_score)
+        if score > 1.0:
+            score = score / 100.0
+        return round(max(0.0, min(1.0, score)), 2)
+
+    async def _calc_evidence_signal(self, fellow: Fellow) -> float:
+        """Signal 5: Evidence Submission (15% weight). % of done objectives with evidence."""
+        if not fellow.team_id:
+            return 0.5
+
+        # Get all completed sprints for the team
+        result = await self.db.execute(
+            select(Sprint)
+            .options(selectinload(Sprint.objectives))
+            .filter(
+                Sprint.team_id == fellow.team_id,
+                Sprint.status == SprintStatus.COMPLETED,
+            )
+        )
+        completed_sprints = result.scalars().all()
+
+        if not completed_sprints:
+            return 0.5
+
+        total_done = 0
+        total_with_evidence = 0
+
+        for sprint in completed_sprints:
+            for obj in sprint.objectives:
+                status = obj.status.value if hasattr(obj.status, "value") else obj.status
+                if status == ObjectiveStatus.DONE.value:
+                    total_done += 1
+                    if obj.evidence_url:
+                        total_with_evidence += 1
+
+        if total_done == 0:
+            return 0.5
+
+        return round(total_with_evidence / total_done, 2)
+
+    def _calc_mentor_flags_signal(self, fellow: Fellow) -> float:
+        """Signal 6: Mentor Flags (10% weight). Based on warnings count."""
+        if fellow.warnings_count == 0:
+            return 1.0  # No flags = perfect
+        elif fellow.warnings_count == 1:
+            return 0.5  # Moderate concern
+        elif fellow.warnings_count == 2:
+            return 0.2  # Major concern
+        else:
+            return 0.0  # Critical
+
+    async def _calc_trend_signal(self, fellow: Fellow) -> float:
+        """Signal 7: Trend (5% weight). Compare recent risk assessments."""
         result = await self.db.execute(
             select(RiskAssessment)
-            .filter(
-                RiskAssessment.fellow_id == fellow_id,
-                RiskAssessment.week >= current_week - lookback,
-                RiskAssessment.week < current_week
-            )
+            .filter(RiskAssessment.fellow_id == fellow.id)
             .order_by(desc(RiskAssessment.week))
+            .limit(4)
         )
-        return result.scalars().all()
+        history = result.scalars().all()
 
-    def _calculate_risk_score(self, signals: Dict[str, Any]) -> float:
-        """
-        Calculate overall risk score from signals.
+        if len(history) < 2:
+            return 0.5  # Insufficient data
 
-        Returns value between 0.0 (no risk) and 1.0 (critical risk).
-        """
-        score = 0.0
-        weight_total = 0.0
+        current = float(history[0].risk_score)
+        previous = float(history[1].risk_score)
+        change = current - previous
 
-        # Check-in frequency (weight: 0.15)
-        if 'check_in_frequency' in signals:
-            freq = signals['check_in_frequency']
-            if freq < 0.33:  # Less than 1 in 3 weeks
-                score += 0.8 * 0.15
-            elif freq < 0.67:  # Less than 2 in 3 weeks
-                score += 0.4 * 0.15
-            weight_total += 0.15
+        if change > 0.1:
+            return 1.0  # Improving
+        elif change < -0.1:
+            return 0.3  # Declining
+        else:
+            return 0.7  # Stable
 
-        # Check-in risk contribution (weight: 0.25)
-        if signals['avg_check_in_risk'] is not None:
-            score += signals['avg_check_in_risk'] * 0.25
-            weight_total += 0.25
-
-        # Sentiment (weight: 0.15)
-        if signals['avg_sentiment'] is not None:
-            # Convert sentiment from -1:1 to 0:1 risk scale (inverted)
-            sentiment_risk = (1.0 - (signals['avg_sentiment'] + 1.0) / 2.0)
-            score += sentiment_risk * 0.15
-            weight_total += 0.15
-
-        # Energy levels (weight: 0.10)
-        if signals['avg_energy'] is not None:
-            # Convert 1-10 scale to 0-1 risk (inverted)
-            energy_risk = 1.0 - (signals['avg_energy'] / 10.0)
-            score += energy_risk * 0.10
-            weight_total += 0.10
-
-        # Milestone performance (weight: 0.20)
-        if signals['milestone_avg'] is not None:
-            # Assuming milestones scored 0-4, convert to risk
-            milestone_risk = 1.0 - (signals['milestone_avg'] / 4.0)
-            score += milestone_risk * 0.20
-            weight_total += 0.20
-
-        # Collaboration issues (weight: 0.05)
-        score += signals['collaboration_issues'] * 0.05
-        weight_total += 0.05
-
-        # Below expectations rate (weight: 0.05)
-        score += signals['below_expectations_rate'] * 0.05
-        weight_total += 0.05
-
-        # Warnings (weight: 0.05)
-        warnings_risk = min(signals['warnings_count'] / 3.0, 1.0)  # Cap at 3 warnings
-        score += warnings_risk * 0.05
-        weight_total += 0.05
-
-        # Normalize by actual weight used
-        if weight_total > 0:
-            score = score / weight_total
-
-        # Amplify if risk is increasing
-        if signals.get('risk_increasing', False):
-            score = min(score * 1.2, 1.0)
-
-        return round(score, 2)
+    # --- Risk Level & Concerns ---
 
     def _determine_risk_level(self, risk_score: float) -> str:
-        """Determine risk level from score."""
-        if risk_score < 0.25:
+        """Map performance score to risk level per spec thresholds."""
+        if risk_score >= 0.70:
             return RiskLevel.ON_TRACK.value
-        elif risk_score < 0.50:
+        elif risk_score >= 0.50:
             return RiskLevel.MONITOR.value
-        elif risk_score < 0.75:
+        elif risk_score >= 0.30:
             return RiskLevel.AT_RISK.value
         else:
             return RiskLevel.CRITICAL.value
 
-    def _identify_concerns(self, signals: Dict[str, Any]) -> Dict[str, Any]:
-        """Identify specific concerns from signals."""
-        concerns = {}
+    def _generate_concerns(self, signals: Dict[str, float], risk_level: str) -> List[Dict[str, str]]:
+        """Generate specific concern items for at_risk/critical fellows."""
+        if risk_level not in (RiskLevel.AT_RISK.value, RiskLevel.CRITICAL.value):
+            return []
 
-        if signals['check_in_frequency'] < 0.67:
-            concerns['check_in_compliance'] = f"Low check-in rate: {signals['check_in_frequency']:.1%}"
+        concerns = []
 
-        if signals['avg_sentiment'] is not None and signals['avg_sentiment'] < -0.3:
-            concerns['low_morale'] = f"Negative sentiment: {signals['avg_sentiment']:.2f}"
+        if signals["attendance_score"] < 0.7:
+            severity = "high" if signals["attendance_score"] < 0.5 else "medium"
+            concerns.append({
+                "type": "attendance",
+                "severity": severity,
+                "description": f"Attendance below target ({round(signals['attendance_score'] * 100)}%)",
+            })
 
-        if signals['avg_energy'] is not None and signals['avg_energy'] < 4:
-            concerns['low_energy'] = f"Low energy levels: {signals['avg_energy']:.1f}/10"
+        if signals["check_in_sentiment"] < 0.4:
+            concerns.append({
+                "type": "engagement",
+                "severity": "high",
+                "description": f"Low sentiment detected in check-ins (score: {signals['check_in_sentiment']})",
+            })
 
-        if signals['collaboration_issues'] > 0.3:
-            concerns['collaboration'] = "Struggling with team collaboration"
+        if signals["sprint_delivery"] < 0.6:
+            severity = "high" if signals["sprint_delivery"] < 0.4 else "medium"
+            concerns.append({
+                "type": "delivery",
+                "severity": severity,
+                "description": f"Sprint delivery below expectations ({round(signals['sprint_delivery'] * 100)}%)",
+            })
 
-        if signals['milestone_avg'] is not None and signals['milestone_avg'] < 2.5:
-            concerns['performance'] = f"Below target milestone performance: {signals['milestone_avg']:.2f}/4"
+        if signals["check_in_completeness"] < 0.8:
+            concerns.append({
+                "type": "compliance",
+                "severity": "medium",
+                "description": f"Missing check-ins ({round(signals['check_in_completeness'] * 100)}% completion)",
+            })
 
-        if signals['warnings_count'] > 0:
-            concerns['warnings'] = f"{signals['warnings_count']} warning(s) issued"
+        if signals["evidence_submission"] < 0.7:
+            concerns.append({
+                "type": "evidence",
+                "severity": "medium",
+                "description": f"Low evidence submission rate ({round(signals['evidence_submission'] * 100)}%)",
+            })
 
-        if signals.get('risk_increasing', False):
-            concerns['trend'] = "Risk score is increasing"
+        if signals["trend"] <= 0.3:
+            concerns.append({
+                "type": "trend",
+                "severity": "medium",
+                "description": "Performance declining over recent weeks",
+            })
+
+        if signals["mentor_flags"] < 0.5:
+            concerns.append({
+                "type": "warnings",
+                "severity": "high",
+                "description": "Multiple warnings issued",
+            })
 
         return concerns
 
-    def _recommend_action(self, risk_level: str, concerns: Dict[str, Any], signals: Dict[str, Any]) -> str:
-        """Recommend action based on risk level and concerns."""
+    async def _detect_patterns(self, fellow_id: UUID) -> List[Dict[str, str]]:
+        """Detect multi-week risk patterns."""
+        result = await self.db.execute(
+            select(RiskAssessment)
+            .filter(RiskAssessment.fellow_id == fellow_id)
+            .order_by(desc(RiskAssessment.week))
+            .limit(4)
+        )
+        assessments = result.scalars().all()
+        patterns = []
+
+        if len(assessments) < 2:
+            return patterns
+
+        # Pattern 1: Sustained risk (2+ consecutive at_risk/critical)
+        consecutive_risk = sum(
+            1 for a in assessments
+            if a.risk_level in (RiskLevel.AT_RISK.value, RiskLevel.CRITICAL.value)
+        )
+        if consecutive_risk >= 2:
+            patterns.append({
+                "pattern": "sustained_risk",
+                "severity": "high",
+                "description": f"{consecutive_risk} consecutive weeks at-risk or critical",
+                "recommendation": "warning_consideration",
+            })
+
+        # Pattern 2: Unstable performance (all 4 levels in 4 weeks)
+        if len(assessments) >= 4:
+            levels = set(a.risk_level for a in assessments)
+            if len(levels) >= 3:
+                patterns.append({
+                    "pattern": "unstable_performance",
+                    "severity": "medium",
+                    "description": "Highly variable performance week-to-week",
+                    "recommendation": "consistency_coaching",
+                })
+
+        return patterns
+
+    def _recommend_action(self, risk_level: str, warnings_count: int) -> str:
+        """Recommend action based on risk level."""
         if risk_level == RiskLevel.CRITICAL.value:
-            return "immediate_intervention"
+            return "immediate_review"
         elif risk_level == RiskLevel.AT_RISK.value:
-            if signals['warnings_count'] >= 1:
+            if warnings_count >= 1:
                 return "final_warning"
-            else:
-                return "issue_warning"
+            return "mentor_intervention"
         elif risk_level == RiskLevel.MONITOR.value:
-            return "schedule_1_on_1"
+            return "check_in_required"
         else:
             return "continue_monitoring"
 
-    def _is_risk_increasing(self, trend: List[float]) -> bool:
-        """Check if risk is on an upward trend."""
-        if len(trend) < 2:
-            return False
-
-        # Simple check: is latest higher than average of previous?
-        latest = trend[0]
-        previous_avg = sum(trend[1:]) / len(trend[1:])
-
-        return latest > previous_avg * 1.1  # 10% increase threshold
+    # --- Dashboard ---
 
     async def get_cohort_risk_dashboard(self, cohort_id: UUID, week: int) -> Dict[str, Any]:
-        """Get risk dashboard data for entire cohort."""
-        # Get all fellows in cohort
+        """Get risk dashboard data for entire cohort with signal breakdowns."""
         result = await self.db.execute(
-            select(Fellow).filter(Fellow.cohort_id == cohort_id)
+            select(Fellow)
+            .options(selectinload(Fellow.applicant))
+            .filter(Fellow.cohort_id == cohort_id)
         )
         fellows = result.scalars().all()
 
-        # Get latest risk assessments for each fellow
-        dashboard_data = {
-            'summary': {
-                'on_track': 0,
-                'monitor': 0,
-                'at_risk': 0,
-                'critical': 0,
-            },
-            'fellows': []
+        dashboard_data: Dict[str, Any] = {
+            "summary": {"on_track": 0, "monitor": 0, "at_risk": 0, "critical": 0},
+            "fellows": [],
         }
 
         for fellow in fellows:
@@ -312,29 +410,45 @@ class RiskDetectionService:
                 .order_by(desc(RiskAssessment.assessed_at))
                 .limit(1)
             )
-            latest_assessment = result.scalar_one_or_none()
+            latest = result.scalar_one_or_none()
 
-            if latest_assessment:
-                risk_level = latest_assessment.risk_level
-                risk_score = float(latest_assessment.risk_score)
+            if latest:
+                risk_level = latest.risk_level
+                risk_score = float(latest.risk_score)
+                signals = latest.signals or {}
+                concerns = latest.concerns or []
+                recommended_action = latest.recommended_action
             else:
-                risk_level = 'on_track'
-                risk_score = 0.0
+                risk_level = "on_track"
+                risk_score = 0.5
+                signals = {}
+                concerns = []
+                recommended_action = None
 
-            # Update summary counts
-            dashboard_data['summary'][risk_level] += 1
+            dashboard_data["summary"][risk_level] = dashboard_data["summary"].get(risk_level, 0) + 1
 
-            # Add fellow data
-            dashboard_data['fellows'].append({
-                'id': str(fellow.id),
-                'name': fellow.applicant.name if fellow.applicant else 'Unknown',
-                'role': fellow.role,
-                'team_id': str(fellow.team_id) if fellow.team_id else None,
-                'risk_level': risk_level,
-                'risk_score': risk_score,
-                'warnings_count': fellow.warnings_count,
-                'milestone_1_score': float(fellow.milestone_1_score) if fellow.milestone_1_score else None,
-                'milestone_2_score': float(fellow.milestone_2_score) if fellow.milestone_2_score else None,
+            # Get team name
+            team_name = None
+            if fellow.team_id:
+                team_result = await self.db.execute(
+                    select(Team).filter(Team.id == fellow.team_id)
+                )
+                team = team_result.scalar_one_or_none()
+                team_name = team.name if team else None
+
+            dashboard_data["fellows"].append({
+                "id": str(fellow.id),
+                "name": fellow.applicant.name if fellow.applicant else "Unknown",
+                "email": fellow.applicant.email if fellow.applicant else None,
+                "role": fellow.role,
+                "team_id": str(fellow.team_id) if fellow.team_id else None,
+                "team_name": team_name,
+                "risk_level": risk_level,
+                "risk_score": risk_score,
+                "signals": signals,
+                "concerns": concerns,
+                "recommended_action": recommended_action,
+                "warnings_count": fellow.warnings_count,
             })
 
         return dashboard_data

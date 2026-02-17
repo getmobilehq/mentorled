@@ -450,26 +450,28 @@ export default function FellowsPage() {
                 </div>
               </div>
 
-              {riskAssessment.contributing_factors && (
+              {riskAssessment.signals && (
                 <div>
-                  <h4 className="font-medium text-gray-900 mb-3">Contributing Factors</h4>
+                  <h4 className="font-medium text-gray-900 mb-3">Signal Breakdown</h4>
                   <div className="space-y-2">
-                    {Object.entries(riskAssessment.contributing_factors).map(([key, value]) => (
+                    {Object.entries(riskAssessment.signals).map(([key, value]) => (
                       <div key={key} className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
-                        <span className="text-sm text-gray-700 capitalize">{key.replace('_', ' ')}</span>
-                        <span className="text-sm font-semibold text-gray-900">{String(value)}</span>
+                        <span className="text-sm text-gray-700 capitalize">{key.replace(/_/g, ' ')}</span>
+                        <span className={`text-sm font-semibold ${
+                          (value as number) >= 0.7 ? 'text-green-600' : (value as number) >= 0.5 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>{Math.round((value as number) * 100)}%</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {riskAssessment.ai_concerns && riskAssessment.ai_concerns.length > 0 && (
+              {riskAssessment.concerns && riskAssessment.concerns.length > 0 && (
                 <div>
-                  <h4 className="font-medium text-gray-900 mb-2">AI-Identified Concerns</h4>
+                  <h4 className="font-medium text-gray-900 mb-2">Concerns</h4>
                   <ul className="list-disc list-inside space-y-1">
-                    {riskAssessment.ai_concerns.map((concern, idx) => (
-                      <li key={idx} className="text-sm text-gray-700">{concern}</li>
+                    {riskAssessment.concerns.map((concern: { description: string }, idx: number) => (
+                      <li key={idx} className="text-sm text-gray-700">{concern.description}</li>
                     ))}
                   </ul>
                 </div>

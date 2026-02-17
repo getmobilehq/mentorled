@@ -29,6 +29,8 @@ from app.models.sprint_objective import SprintObjective, ObjectiveStatus
 from app.models.meeting import Meeting, MeetingStatus
 from app.models.attendance import Attendance, AttendanceStatus
 from app.models.retrospective import Retrospective
+from app.models.risk_assessment import RiskAssessment
+from app.models.check_in import CheckIn
 from app.models.user import User, UserRole
 from app.utils.auth import hash_password
 from app.services.sprint_generator import generate_sprints_for_team
@@ -420,6 +422,170 @@ async def seed_database():
             await db.flush()
             print("✓ Created retrospectives for Sprint 1 (both teams)")
 
+            # =================================================================
+            # CHECK-INS & RISK ASSESSMENTS (7-signal format)
+            # =================================================================
+            print("\n--- Check-ins & Risk Assessments ---")
+
+            # Create check-ins for weeks 1-3 for all fellows
+            checkin_count = 0
+            sentiments_by_fellow = {}  # Track for risk assessment seeding
+            for fellow in fellows:
+                fellow_sentiments = []
+                for wk in range(1, 4):
+                    # Vary sentiment and energy by fellow to create diverse risk profiles
+                    idx = fellows.index(fellow)
+                    if idx in (4, 10):
+                        # These fellows will be "at risk" — lower sentiment & energy
+                        base_sentiment = random.uniform(-0.3, 0.2)
+                        energy = random.randint(2, 4)
+                        self_assessment = random.choice(["met", "below", "below"])
+                        collab = random.choice(["okay", "struggling", "okay"])
+                    elif idx in (3, 9):
+                        # These fellows will be "monitor" — moderate
+                        base_sentiment = random.uniform(0.0, 0.5)
+                        energy = random.randint(4, 6)
+                        self_assessment = random.choice(["met", "met", "below"])
+                        collab = random.choice(["good", "okay", "okay"])
+                    else:
+                        # Most fellows on track
+                        base_sentiment = random.uniform(0.4, 0.9)
+                        energy = random.randint(6, 9)
+                        self_assessment = random.choice(["met", "met", "exceeded"])
+                        collab = random.choice(["great", "good", "good"])
+
+                    sentiment = round(base_sentiment, 2)
+                    fellow_sentiments.append(sentiment)
+                    risk_contrib = round(max(0, 1.0 - (sentiment + 1.0) / 2.0), 2)
+
+                    ci = CheckIn(
+                        fellow_id=fellow.id,
+                        week=wk,
+                        accomplishments=f"Week {wk} accomplishments for {fellow.role}.",
+                        next_focus=f"Planning to work on sprint objectives for week {wk+1}.",
+                        blockers="Need code review on authentication PR." if idx in (4, 10) else None,
+                        needs_help="Could use pair programming session." if idx in (4, 10) else None,
+                        self_assessment=self_assessment,
+                        collaboration_rating=collab,
+                        energy_level=energy,
+                        sentiment_score=sentiment,
+                        risk_contribution=risk_contrib,
+                        blockers_extracted=["Authentication PR review needed"] if idx in (4, 10) else [],
+                        action_items=["Schedule pair programming", "Follow up with mentor"] if idx in (4, 10) else [],
+                        analyzed_at=datetime.now() - timedelta(days=(3 - wk) * 7),
+                        analysis={
+                            "sentiment_score": sentiment,
+                            "risk_contribution": risk_contrib,
+                            "engagement_level": "low" if idx in (4, 10) else "medium" if idx in (3, 9) else "high",
+                            "summary": f"Week {wk} analysis for {fellow.role}.",
+                        },
+                    )
+                    db.add(ci)
+                    checkin_count += 1
+
+                sentiments_by_fellow[fellow.id] = fellow_sentiments
+
+            await db.flush()
+            print(f"✓ Created {checkin_count} check-ins (3 weeks x {len(fellows)} fellows)")
+
+            # Create risk assessments (week 2 and week 3) with 7-signal format
+            risk_count = 0
+            for fellow in fellows:
+                idx = fellows.index(fellow)
+                for wk in [2, 3]:
+                    # Build 7 signals based on fellow profile
+                    if idx in (4, 10):
+                        # At-risk fellows
+                        signals = {
+                            "attendance_score": round(random.uniform(0.45, 0.65), 2),
+                            "check_in_sentiment": round(random.uniform(0.25, 0.45), 2),
+                            "check_in_completeness": round(wk / wk, 2),
+                            "sprint_delivery": round(random.uniform(0.3, 0.5), 2),
+                            "evidence_submission": round(random.uniform(0.3, 0.5), 2),
+                            "mentor_flags": 0.5,
+                            "trend": 0.3 if wk == 3 else 0.5,
+                        }
+                    elif idx in (3, 9):
+                        # Monitor fellows
+                        signals = {
+                            "attendance_score": round(random.uniform(0.65, 0.80), 2),
+                            "check_in_sentiment": round(random.uniform(0.45, 0.60), 2),
+                            "check_in_completeness": round(wk / wk, 2),
+                            "sprint_delivery": round(random.uniform(0.5, 0.7), 2),
+                            "evidence_submission": round(random.uniform(0.5, 0.7), 2),
+                            "mentor_flags": 1.0,
+                            "trend": 0.7,
+                        }
+                    else:
+                        # On-track fellows
+                        signals = {
+                            "attendance_score": round(random.uniform(0.85, 1.0), 2),
+                            "check_in_sentiment": round(random.uniform(0.65, 0.90), 2),
+                            "check_in_completeness": 1.0,
+                            "sprint_delivery": round(random.uniform(0.7, 0.95), 2),
+                            "evidence_submission": round(random.uniform(0.7, 1.0), 2),
+                            "mentor_flags": 1.0,
+                            "trend": round(random.uniform(0.7, 1.0), 2),
+                        }
+
+                    # Calculate weighted score
+                    weights = {
+                        "attendance_score": 0.20, "check_in_sentiment": 0.15,
+                        "check_in_completeness": 0.10, "sprint_delivery": 0.25,
+                        "evidence_submission": 0.15, "mentor_flags": 0.10, "trend": 0.05,
+                    }
+                    risk_score = round(sum(signals[k] * weights[k] for k in weights), 2)
+
+                    # Determine level
+                    if risk_score >= 0.70:
+                        risk_level = "on_track"
+                    elif risk_score >= 0.50:
+                        risk_level = "monitor"
+                    elif risk_score >= 0.30:
+                        risk_level = "at_risk"
+                    else:
+                        risk_level = "critical"
+
+                    # Generate concerns
+                    concerns = []
+                    if signals["attendance_score"] < 0.7:
+                        concerns.append({"type": "attendance", "severity": "high" if signals["attendance_score"] < 0.5 else "medium", "description": f"Attendance below target ({round(signals['attendance_score']*100)}%)"})
+                    if signals["sprint_delivery"] < 0.6:
+                        concerns.append({"type": "delivery", "severity": "high" if signals["sprint_delivery"] < 0.4 else "medium", "description": f"Sprint delivery below expectations ({round(signals['sprint_delivery']*100)}%)"})
+                    if signals["check_in_sentiment"] < 0.4:
+                        concerns.append({"type": "engagement", "severity": "high", "description": f"Low sentiment in check-ins ({signals['check_in_sentiment']})"})
+
+                    # Recommended action
+                    if risk_level == "critical":
+                        rec_action = "immediate_review"
+                    elif risk_level == "at_risk":
+                        rec_action = "mentor_intervention"
+                    elif risk_level == "monitor":
+                        rec_action = "check_in_required"
+                    else:
+                        rec_action = "continue_monitoring"
+
+                    ra = RiskAssessment(
+                        fellow_id=fellow.id,
+                        week=wk,
+                        risk_level=risk_level,
+                        risk_score=risk_score,
+                        signals=signals,
+                        concerns=concerns,
+                        recommended_action=rec_action,
+                        assessed_at=datetime.now() - timedelta(days=(3 - wk) * 7),
+                    )
+                    db.add(ra)
+                    risk_count += 1
+
+                    # Update fellow's current risk score/level with latest week
+                    if wk == 3:
+                        fellow.current_risk_score = risk_score
+                        fellow.current_risk_level = risk_level
+
+            await db.flush()
+            print(f"✓ Created {risk_count} risk assessments (2 weeks x {len(fellows)} fellows)")
+
             await db.commit()
             print("\n✅ Database seeded successfully!")
             print(f"\n📊 Summary:")
@@ -434,6 +600,8 @@ async def seed_database():
             print(f"   - Sprint Objectives: 20 (5 per sprint x 2 sprints x 2 teams)")
             print(f"   - Attendance Records: {attendance_count}")
             print(f"   - Retrospectives: 2 (Sprint 1, both teams)")
+            print(f"   - Check-ins: {checkin_count} (3 weeks x {len(fellows)} fellows)")
+            print(f"   - Risk Assessments: {risk_count} (7-signal format, weeks 2-3)")
             print(f"   - Challenges: {len(challenges)}")
             print(f"   - Microship Submissions: 1")
             for c in challenges:

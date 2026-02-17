@@ -147,6 +147,31 @@ async def update_sprint_status(
         )
 
     sprint.status = data.status
+
+    # Auto-calculate completion_score when completing a sprint
+    if data.status == "completed":
+        result = await db.execute(
+            select(SprintObjective).where(SprintObjective.sprint_id == sprint_id)
+        )
+        objectives = result.scalars().all()
+
+        if objectives:
+            total = len(objectives)
+            done_count = sum(
+                1 for o in objectives
+                if (o.status.value if hasattr(o.status, 'value') else o.status) == ObjectiveStatus.DONE.value
+            )
+            evidence_count = sum(
+                1 for o in objectives
+                if (o.status.value if hasattr(o.status, 'value') else o.status) == ObjectiveStatus.DONE.value
+                and o.evidence_url
+            )
+            completion_rate = done_count / total
+            evidence_rate = evidence_count / done_count if done_count > 0 else 0.0
+            # Formula: 70% completion + 30% evidence
+            score = round((completion_rate * 0.7 + evidence_rate * 0.3) * 100, 2)
+            sprint.completion_score = score
+
     await db.commit()
     await db.refresh(sprint)
     return sprint

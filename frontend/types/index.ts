@@ -129,13 +129,29 @@ export interface CheckInAnalysisResponse {
   analyzed_at: string;
 }
 
+export interface RiskSignals {
+  attendance_score: number;
+  check_in_sentiment: number;
+  check_in_completeness: number;
+  sprint_delivery: number;
+  evidence_submission: number;
+  mentor_flags: number;
+  trend: number;
+}
+
+export interface RiskConcern {
+  type: string;
+  severity: string;
+  description: string;
+}
+
 export interface RiskAssessment {
   id: string;
   fellow_id: string;
   risk_level: RiskLevel;
   risk_score: number;
-  contributing_factors: any;
-  ai_concerns?: string[];
+  signals?: RiskSignals;
+  concerns?: RiskConcern[];
   recommended_action: string;
   assessed_at: string;
 }
@@ -146,8 +162,8 @@ export interface RiskAssessmentDetail {
   week: number;
   risk_level: string;
   risk_score: number;
-  signals?: Record<string, number>;
-  concerns?: Record<string, any>;
+  signals?: RiskSignals;
+  concerns?: RiskConcern[];
   recommended_action?: string;
   action_taken?: string;
   actioned_by?: string;

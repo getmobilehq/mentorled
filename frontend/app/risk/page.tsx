@@ -1,21 +1,45 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
+import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { riskAPI, cohortsAPI } from '@/lib/api';
 import {
-  AlertTriangle,
-  CheckCircle,
-  TrendingUp,
-  Users,
-  Shield,
+  AlertTriangle, CheckCircle, TrendingUp, TrendingDown,
+  Users, Shield, BarChart3, Activity, Target, Calendar,
+  Clock, Eye, Zap,
 } from 'lucide-react';
-import type { Cohort, RiskAssessmentDetail } from '@/types';
+import type { Cohort, RiskAssessmentDetail, RiskSignals, RiskConcern } from '@/types';
+
+// Signal display configuration
+const SIGNAL_CONFIG: Record<keyof RiskSignals, { label: string; weight: string; icon: React.ReactNode }> = {
+  attendance_score: { label: 'Attendance', weight: '20%', icon: <Calendar className="h-4 w-4" /> },
+  check_in_sentiment: { label: 'Sentiment', weight: '15%', icon: <Activity className="h-4 w-4" /> },
+  check_in_completeness: { label: 'Completeness', weight: '10%', icon: <CheckCircle className="h-4 w-4" /> },
+  sprint_delivery: { label: 'Sprint Delivery', weight: '25%', icon: <Target className="h-4 w-4" /> },
+  evidence_submission: { label: 'Evidence', weight: '15%', icon: <Eye className="h-4 w-4" /> },
+  mentor_flags: { label: 'Mentor Flags', weight: '10%', icon: <Shield className="h-4 w-4" /> },
+  trend: { label: 'Trend', weight: '5%', icon: <TrendingUp className="h-4 w-4" /> },
+};
+
+interface RiskDashboardFellow {
+  id: string;
+  name: string;
+  email?: string;
+  role: string;
+  team_id?: string | null;
+  team_name?: string | null;
+  risk_level: string;
+  risk_score: number;
+  signals: RiskSignals;
+  concerns: RiskConcern[];
+  recommended_action?: string;
+  warnings_count: number;
+}
 
 interface RiskDashboardData {
   summary: {
@@ -24,30 +48,38 @@ interface RiskDashboardData {
     at_risk: number;
     critical: number;
   };
-  fellows: Array<{
-    id: string;
-    name: string;
-    role: string;
-    team_id?: string | null;
-    risk_level: string;
-    risk_score: number;
-    warnings_count: number;
-    milestone_1_score?: number | null;
-    milestone_2_score?: number | null;
-  }>;
+  fellows: RiskDashboardFellow[];
+}
+
+const RISK_COLORS: Record<string, { bg: string; text: string; bar: string; badge: 'success' | 'warning' | 'danger' | 'info' }> = {
+  on_track: { bg: 'bg-green-50', text: 'text-green-700', bar: 'bg-green-500', badge: 'success' },
+  monitor: { bg: 'bg-yellow-50', text: 'text-yellow-700', bar: 'bg-yellow-500', badge: 'warning' },
+  at_risk: { bg: 'bg-orange-50', text: 'text-orange-700', bar: 'bg-orange-500', badge: 'danger' },
+  critical: { bg: 'bg-red-50', text: 'text-red-700', bar: 'bg-red-500', badge: 'danger' },
+};
+
+function getSignalColor(value: number): string {
+  if (value >= 0.7) return 'bg-green-500';
+  if (value >= 0.5) return 'bg-yellow-500';
+  if (value >= 0.3) return 'bg-orange-500';
+  return 'bg-red-500';
+}
+
+function formatRiskLevel(level: string): string {
+  return level.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 export default function RiskDashboardPage() {
   const [dashboardData, setDashboardData] = useState<RiskDashboardData | null>(null);
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [selectedCohortId, setSelectedCohortId] = useState<string>('');
-  const [currentWeek, setCurrentWeek] = useState<number>(1);
+  const [currentWeek, setCurrentWeek] = useState<number>(3);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'on_track' | 'monitor' | 'at_risk' | 'critical'>('all');
 
-  // Detail modal state
+  // Detail modal
   const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [selectedFellow, setSelectedFellow] = useState<RiskDashboardData['fellows'][0] | null>(null);
+  const [selectedFellow, setSelectedFellow] = useState<RiskDashboardFellow | null>(null);
   const [fellowRiskHistory, setFellowRiskHistory] = useState<RiskAssessmentDetail[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedAction, setSelectedAction] = useState<string>('');
@@ -58,20 +90,14 @@ export default function RiskDashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedCohortId) {
-      fetchDashboard();
-    }
+    if (selectedCohortId) fetchDashboard();
   }, [selectedCohortId, currentWeek]);
 
   const fetchCohorts = async () => {
     try {
-      const response = await cohortsAPI.list();
-      const cohortsList = response.data;
-      setCohorts(cohortsList);
-
-      if (cohortsList.length > 0) {
-        setSelectedCohortId(cohortsList[0].id);
-      }
+      const res = await cohortsAPI.list();
+      setCohorts(res.data);
+      if (res.data.length > 0) setSelectedCohortId(res.data[0].id);
     } catch (error) {
       console.error('Error fetching cohorts:', error);
     }
@@ -79,11 +105,10 @@ export default function RiskDashboardPage() {
 
   const fetchDashboard = async () => {
     if (!selectedCohortId) return;
-
     setLoading(true);
     try {
-      const response = await riskAPI.getDashboard(selectedCohortId, currentWeek);
-      setDashboardData(response.data);
+      const res = await riskAPI.getDashboard(selectedCohortId, currentWeek);
+      setDashboardData(res.data);
     } catch (error) {
       console.error('Error fetching risk dashboard:', error);
     } finally {
@@ -91,15 +116,14 @@ export default function RiskDashboardPage() {
     }
   };
 
-  const handleViewFellow = async (fellow: RiskDashboardData['fellows'][0]) => {
+  const handleViewFellow = async (fellow: RiskDashboardFellow) => {
     setSelectedFellow(fellow);
     setDetailModalOpen(true);
     setLoadingDetail(true);
     setSelectedAction('');
-
     try {
-      const response = await riskAPI.getFellowHistory(fellow.id);
-      setFellowRiskHistory(response.data);
+      const res = await riskAPI.getFellowHistory(fellow.id);
+      setFellowRiskHistory(res.data);
     } catch (error) {
       console.error('Error fetching risk history:', error);
       setFellowRiskHistory([]);
@@ -110,64 +134,27 @@ export default function RiskDashboardPage() {
 
   const handleRecordAction = async () => {
     if (!selectedAction || fellowRiskHistory.length === 0) return;
-
-    const latestAssessment = fellowRiskHistory[0];
     setRecordingAction(true);
-
     try {
-      await riskAPI.recordAction(latestAssessment.id, selectedAction);
-      alert('Action recorded successfully.');
-      const response = await riskAPI.getFellowHistory(selectedFellow!.id);
-      setFellowRiskHistory(response.data);
+      await riskAPI.recordAction(fellowRiskHistory[0].id, selectedAction);
+      const res = await riskAPI.getFellowHistory(selectedFellow!.id);
+      setFellowRiskHistory(res.data);
       setSelectedAction('');
     } catch (error) {
       console.error('Error recording action:', error);
-      alert('Failed to record action.');
     } finally {
       setRecordingAction(false);
     }
   };
 
-  const getRiskBadgeVariant = (riskLevel: string) => {
-    switch (riskLevel) {
-      case 'on_track':
-        return 'success';
-      case 'monitor':
-        return 'warning';
-      case 'at_risk':
-        return 'danger';
-      case 'critical':
-        return 'danger';
-      default:
-        return 'secondary';
-    }
-  };
+  const filteredFellows = useMemo(() => {
+    if (!dashboardData) return [];
+    const sorted = [...dashboardData.fellows].sort((a, b) => a.risk_score - b.risk_score);
+    if (filter === 'all') return sorted;
+    return sorted.filter(f => f.risk_level === filter);
+  }, [dashboardData, filter]);
 
-  const getRiskIcon = (riskLevel: string) => {
-    switch (riskLevel) {
-      case 'on_track':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'monitor':
-        return <TrendingUp className="h-4 w-4 text-yellow-600" />;
-      case 'at_risk':
-      case 'critical':
-        return <AlertTriangle className="h-4 w-4 text-red-600" />;
-      default:
-        return null;
-    }
-  };
-
-  const formatRiskLevel = (level: string) => {
-    return level.split('_').map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
-  };
-
-  // Filter fellows
-  const filteredFellows = dashboardData?.fellows.filter(fellow => {
-    if (filter === 'all') return true;
-    return fellow.risk_level === filter;
-  }) || [];
+  const totalFellows = dashboardData?.fellows.length || 0;
 
   if (loading && !dashboardData) {
     return (
@@ -182,150 +169,130 @@ export default function RiskDashboardPage() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        {/* Page header */}
+        {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Risk Dashboard</h1>
           <p className="mt-2 text-gray-600">
-            Monitor fellow risk levels and take proactive action
+            7-signal weighted risk assessment for active fellows
           </p>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap gap-4 items-end">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Cohort
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cohort</label>
             <select
-              className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
               value={selectedCohortId}
               onChange={(e) => setSelectedCohortId(e.target.value)}
             >
-              {cohorts.map(cohort => (
-                <option key={cohort.id} value={cohort.id}>
-                  {cohort.name}
-                </option>
+              {cohorts.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Week
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Week</label>
             <input
               type="number"
               min="1"
               max="12"
-              className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 w-20"
               value={currentWeek}
-              onChange={(e) => setCurrentWeek(parseInt(e.target.value))}
+              onChange={(e) => setCurrentWeek(parseInt(e.target.value) || 1)}
             />
           </div>
-
-          <div className="ml-auto flex items-end">
-            <Button onClick={fetchDashboard} size="sm">
-              Refresh
-            </Button>
-          </div>
+          <Button onClick={fetchDashboard} size="sm">
+            <Zap className="mr-1 h-4 w-4" /> Refresh
+          </Button>
         </div>
 
         {dashboardData && (
           <>
-            {/* Summary Stats */}
+            {/* Risk Distribution */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilter('on_track')}>
-                <div className="text-center">
-                  <div className="flex items-center justify-center">
-                    <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
-                    <p className="text-sm font-medium text-gray-600">On Track</p>
-                  </div>
-                  <p className="mt-2 text-3xl font-bold text-green-600">
-                    {dashboardData.summary.on_track}
-                  </p>
-                </div>
-              </Card>
-
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilter('monitor')}>
-                <div className="text-center">
-                  <div className="flex items-center justify-center">
-                    <TrendingUp className="h-5 w-5 text-yellow-600 mr-2" />
-                    <p className="text-sm font-medium text-gray-600">Monitor</p>
-                  </div>
-                  <p className="mt-2 text-3xl font-bold text-yellow-600">
-                    {dashboardData.summary.monitor}
-                  </p>
-                </div>
-              </Card>
-
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilter('at_risk')}>
-                <div className="text-center">
-                  <div className="flex items-center justify-center">
-                    <AlertTriangle className="h-5 w-5 text-orange-600 mr-2" />
-                    <p className="text-sm font-medium text-gray-600">At Risk</p>
-                  </div>
-                  <p className="mt-2 text-3xl font-bold text-orange-600">
-                    {dashboardData.summary.at_risk}
-                  </p>
-                </div>
-              </Card>
-
-              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setFilter('critical')}>
-                <div className="text-center">
-                  <div className="flex items-center justify-center">
-                    <Shield className="h-5 w-5 text-red-600 mr-2" />
-                    <p className="text-sm font-medium text-gray-600">Critical</p>
-                  </div>
-                  <p className="mt-2 text-3xl font-bold text-red-600">
-                    {dashboardData.summary.critical}
-                  </p>
-                </div>
-              </Card>
+              {(['on_track', 'monitor', 'at_risk', 'critical'] as const).map((level) => {
+                const count = dashboardData.summary[level];
+                const pct = totalFellows > 0 ? Math.round((count / totalFellows) * 100) : 0;
+                const colors = RISK_COLORS[level];
+                const icons = {
+                  on_track: <CheckCircle className="h-5 w-5 text-green-600" />,
+                  monitor: <TrendingUp className="h-5 w-5 text-yellow-600" />,
+                  at_risk: <AlertTriangle className="h-5 w-5 text-orange-600" />,
+                  critical: <Shield className="h-5 w-5 text-red-600" />,
+                };
+                return (
+                  <Card
+                    key={level}
+                    className={`cursor-pointer hover:shadow-md transition-shadow ${filter === level ? 'ring-2 ring-green-500' : ''}`}
+                    onClick={() => setFilter(filter === level ? 'all' : level)}
+                  >
+                    <div className="text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        {icons[level]}
+                        <span className="text-sm font-medium text-gray-600">{formatRiskLevel(level)}</span>
+                      </div>
+                      <p className={`mt-2 text-3xl font-bold ${colors.text}`}>{count}</p>
+                      <p className="text-xs text-gray-500 mt-1">{pct}% of fellows</p>
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
+
+            {/* Risk Distribution Bar */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-gray-600" />
+                  Risk Distribution
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex h-6 rounded-full overflow-hidden bg-gray-100">
+                  {totalFellows > 0 && (['on_track', 'monitor', 'at_risk', 'critical'] as const).map((level) => {
+                    const pct = (dashboardData.summary[level] / totalFellows) * 100;
+                    if (pct === 0) return null;
+                    return (
+                      <div
+                        key={level}
+                        className={`${RISK_COLORS[level].bar} transition-all`}
+                        style={{ width: `${pct}%` }}
+                        title={`${formatRiskLevel(level)}: ${dashboardData.summary[level]} (${Math.round(pct)}%)`}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between mt-2 text-xs text-gray-500">
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> On Track</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-500 inline-block" /> Monitor</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500 inline-block" /> At Risk</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500 inline-block" /> Critical</span>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Filter Tabs */}
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant={filter === 'all' ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setFilter('all')}
-              >
-                All ({dashboardData.fellows.length})
-              </Button>
-              <Button
-                variant={filter === 'on_track' ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setFilter('on_track')}
-              >
-                On Track ({dashboardData.summary.on_track})
-              </Button>
-              <Button
-                variant={filter === 'monitor' ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setFilter('monitor')}
-              >
-                Monitor ({dashboardData.summary.monitor})
-              </Button>
-              <Button
-                variant={filter === 'at_risk' ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setFilter('at_risk')}
-              >
-                At Risk ({dashboardData.summary.at_risk})
-              </Button>
-              <Button
-                variant={filter === 'critical' ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setFilter('critical')}
-              >
-                Critical ({dashboardData.summary.critical})
-              </Button>
+              {(['all', 'on_track', 'monitor', 'at_risk', 'critical'] as const).map((f) => {
+                const count = f === 'all' ? totalFellows : dashboardData.summary[f];
+                return (
+                  <Button
+                    key={f}
+                    variant={filter === f ? 'primary' : 'secondary'}
+                    size="sm"
+                    onClick={() => setFilter(f)}
+                  >
+                    {f === 'all' ? 'All' : formatRiskLevel(f)} ({count})
+                  </Button>
+                );
+              })}
             </div>
 
             {/* Fellows Table */}
             <Card padding={false}>
               <CardHeader className="px-6 pt-6">
-                <CardTitle>Fellows</CardTitle>
+                <CardTitle>Fellows ({filteredFellows.length})</CardTitle>
               </CardHeader>
               <CardContent className="px-0">
                 {filteredFellows.length === 0 ? (
@@ -342,109 +309,95 @@ export default function RiskDashboardPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Role</TableHead>
+                        <TableHead>Fellow</TableHead>
                         <TableHead>Team</TableHead>
                         <TableHead>Risk Level</TableHead>
-                        <TableHead>Risk Score</TableHead>
-                        <TableHead>Milestone 1</TableHead>
-                        <TableHead>Milestone 2</TableHead>
-                        <TableHead>Warnings</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>Score</TableHead>
+                        <TableHead>Top Signals</TableHead>
+                        <TableHead>Action</TableHead>
+                        <TableHead className="text-right">-</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredFellows.map((fellow) => (
-                        <TableRow key={fellow.id} className="cursor-pointer hover:bg-gray-50" onClick={() => handleViewFellow(fellow)}>
-                          <TableCell className="font-medium">
-                            {fellow.name}
-                          </TableCell>
-                          <TableCell>
-                            <span className="capitalize">
-                              {fellow.role.replace('_', ' ')}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {fellow.team_id ? (
-                              <Badge variant="secondary">Team {fellow.team_id.slice(0, 8)}</Badge>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center space-x-2">
-                              {getRiskIcon(fellow.risk_level)}
-                              <Badge variant={getRiskBadgeVariant(fellow.risk_level)}>
+                      {filteredFellows.map((fellow) => {
+                        const colors = RISK_COLORS[fellow.risk_level] || RISK_COLORS.on_track;
+                        // Find lowest 2 signals
+                        const signalEntries = fellow.signals
+                          ? Object.entries(fellow.signals)
+                            .sort(([, a], [, b]) => (a as number) - (b as number))
+                            .slice(0, 2)
+                          : [];
+                        return (
+                          <TableRow
+                            key={fellow.id}
+                            className="cursor-pointer hover:bg-gray-50"
+                            onClick={() => handleViewFellow(fellow)}
+                          >
+                            <TableCell>
+                              <div>
+                                <p className="font-medium text-gray-900">{fellow.name}</p>
+                                <p className="text-xs text-gray-500 capitalize">{fellow.role.replace(/_/g, ' ')}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {fellow.team_name ? (
+                                <Badge variant="secondary">{fellow.team_name}</Badge>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={colors.badge}>
                                 {formatRiskLevel(fellow.risk_level)}
                               </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center">
-                              <div className="w-24 bg-gray-200 rounded-full h-2 mr-2">
-                                <div
-                                  className={`h-2 rounded-full ${
-                                    fellow.risk_score < 0.25 ? 'bg-green-600' :
-                                    fellow.risk_score < 0.50 ? 'bg-yellow-600' :
-                                    fellow.risk_score < 0.75 ? 'bg-orange-600' :
-                                    'bg-red-600'
-                                  }`}
-                                  style={{ width: `${fellow.risk_score * 100}%` }}
-                                />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div className="w-20 bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className={`h-2 rounded-full ${colors.bar}`}
+                                    style={{ width: `${fellow.risk_score * 100}%` }}
+                                  />
+                                </div>
+                                <span className="text-sm font-semibold">{Math.round(fellow.risk_score * 100)}</span>
                               </div>
-                              <span className="text-sm font-semibold">
-                                {fellow.risk_score.toFixed(2)}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {fellow.milestone_1_score !== null && fellow.milestone_1_score !== undefined ? (
-                              <span className={`font-semibold ${
-                                fellow.milestone_1_score >= 3 ? 'text-green-600' :
-                                fellow.milestone_1_score >= 2.5 ? 'text-yellow-600' :
-                                'text-red-600'
-                              }`}>
-                                {fellow.milestone_1_score.toFixed(1)}/4
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {fellow.milestone_2_score !== null && fellow.milestone_2_score !== undefined ? (
-                              <span className={`font-semibold ${
-                                fellow.milestone_2_score >= 3 ? 'text-green-600' :
-                                fellow.milestone_2_score >= 2.5 ? 'text-yellow-600' :
-                                'text-red-600'
-                              }`}>
-                                {fellow.milestone_2_score.toFixed(1)}/4
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {fellow.warnings_count > 0 ? (
-                              <Badge variant="danger">
-                                {fellow.warnings_count}
-                              </Badge>
-                            ) : (
-                              <span className="text-gray-400">None</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div onClick={(e) => e.stopPropagation()}>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => handleViewFellow(fellow)}
-                              >
-                                View
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                {signalEntries.map(([key, val]) => {
+                                  const cfg = SIGNAL_CONFIG[key as keyof RiskSignals];
+                                  const v = val as number;
+                                  return (
+                                    <span
+                                      key={key}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${
+                                        v < 0.5 ? 'bg-red-100 text-red-700' : v < 0.7 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                                      }`}
+                                      title={`${cfg?.label}: ${Math.round(v * 100)}%`}
+                                    >
+                                      {cfg?.label.substring(0, 4)} {Math.round(v * 100)}%
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {fellow.recommended_action && (
+                                <span className="text-xs text-gray-600 capitalize">
+                                  {fellow.recommended_action.replace(/_/g, ' ')}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <Button size="sm" variant="secondary" onClick={() => handleViewFellow(fellow)}>
+                                  View
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 )}
@@ -453,7 +406,7 @@ export default function RiskDashboardPage() {
           </>
         )}
 
-        {/* Risk Detail Modal */}
+        {/* Detail Modal */}
         <Modal
           open={detailModalOpen}
           onOpenChange={setDetailModalOpen}
@@ -464,41 +417,97 @@ export default function RiskDashboardPage() {
             <div className="py-8 text-center text-gray-500">Loading risk details...</div>
           ) : selectedFellow ? (
             <div className="space-y-6 max-h-[70vh] overflow-y-auto">
-              {/* Fellow Info */}
-              <div className="rounded-lg bg-gray-50 p-4">
+              {/* Fellow Header */}
+              <div className={`rounded-lg p-4 ${RISK_COLORS[selectedFellow.risk_level]?.bg || 'bg-gray-50'}`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-lg font-semibold">{selectedFellow.name}</p>
-                    <p className="text-sm text-gray-600 capitalize">{selectedFellow.role.replace('_', ' ')}</p>
-                    {selectedFellow.team_id && (
-                      <Badge variant="info" className="mt-1">Team {selectedFellow.team_id.slice(0, 8)}</Badge>
+                    <p className="text-lg font-semibold text-gray-900">{selectedFellow.name}</p>
+                    <p className="text-sm text-gray-600 capitalize">{selectedFellow.role.replace(/_/g, ' ')}</p>
+                    {selectedFellow.team_name && (
+                      <Badge variant="info" className="mt-1">{selectedFellow.team_name}</Badge>
                     )}
                   </div>
                   <div className="text-right">
-                    <Badge variant={getRiskBadgeVariant(selectedFellow.risk_level)} className="text-lg px-3 py-1">
+                    <Badge
+                      variant={RISK_COLORS[selectedFellow.risk_level]?.badge || 'info'}
+                      className="text-lg px-3 py-1"
+                    >
                       {formatRiskLevel(selectedFellow.risk_level)}
                     </Badge>
-                    <p className="text-2xl font-bold mt-1">{selectedFellow.risk_score.toFixed(2)}</p>
+                    <p className="text-3xl font-bold mt-1">{Math.round(selectedFellow.risk_score * 100)}<span className="text-sm text-gray-500">/100</span></p>
                   </div>
                 </div>
               </div>
 
-              {/* Latest Assessment Details */}
+              {/* 7-Signal Breakdown */}
+              {selectedFellow.signals && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4" /> Signal Breakdown
+                  </h4>
+                  <div className="space-y-3">
+                    {(Object.keys(SIGNAL_CONFIG) as Array<keyof RiskSignals>).map((key) => {
+                      const cfg = SIGNAL_CONFIG[key];
+                      const val = selectedFellow.signals?.[key] ?? 0;
+                      const pct = Math.round(val * 100);
+                      return (
+                        <div key={key} className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 w-36 text-sm text-gray-700">
+                            {cfg.icon}
+                            <span>{cfg.label}</span>
+                          </div>
+                          <div className="flex-1 bg-gray-200 rounded-full h-3 relative">
+                            <div
+                              className={`h-3 rounded-full transition-all ${getSignalColor(val)}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="w-16 text-right">
+                            <span className={`text-sm font-semibold ${
+                              val >= 0.7 ? 'text-green-600' : val >= 0.5 ? 'text-yellow-600' : 'text-red-600'
+                            }`}>
+                              {pct}%
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-400 w-8">{cfg.weight}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Concerns */}
+              {selectedFellow.concerns && selectedFellow.concerns.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-orange-500" /> Concerns
+                  </h4>
+                  <div className="space-y-2">
+                    {selectedFellow.concerns.map((concern, idx) => (
+                      <div
+                        key={idx}
+                        className={`rounded-lg border p-3 ${
+                          concern.severity === 'high' ? 'border-red-200 bg-red-50' : 'border-yellow-200 bg-yellow-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant={concern.severity === 'high' ? 'danger' : 'warning'}>
+                            {concern.severity}
+                          </Badge>
+                          <span className="text-xs text-gray-500 capitalize">{concern.type}</span>
+                        </div>
+                        <p className="text-sm text-gray-800">{concern.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Latest Assessment Action */}
               {fellowRiskHistory.length > 0 && (
                 <div>
                   <h4 className="font-medium text-gray-900 mb-3">Latest Assessment (Week {fellowRiskHistory[0].week})</h4>
-
-                  {/* Concerns */}
-                  {fellowRiskHistory[0].concerns && Object.keys(fellowRiskHistory[0].concerns).length > 0 && (
-                    <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4 mb-3">
-                      <p className="text-sm font-medium text-yellow-900 mb-2">Concerns</p>
-                      <ul className="list-disc list-inside space-y-1">
-                        {Object.values(fellowRiskHistory[0].concerns).map((concern, idx) => (
-                          <li key={idx} className="text-sm text-yellow-800">{String(concern)}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
 
                   {/* Recommended Action */}
                   {fellowRiskHistory[0].recommended_action && (
@@ -514,7 +523,9 @@ export default function RiskDashboardPage() {
                   {fellowRiskHistory[0].action_taken ? (
                     <div className="rounded-lg bg-green-50 border border-green-200 p-4">
                       <p className="text-sm font-medium text-green-900">Action Taken</p>
-                      <p className="text-base text-green-700 capitalize">{fellowRiskHistory[0].action_taken.replace(/_/g, ' ')}</p>
+                      <p className="text-base text-green-700 capitalize">
+                        {fellowRiskHistory[0].action_taken.replace(/_/g, ' ')}
+                      </p>
                       {fellowRiskHistory[0].actioned_at && (
                         <p className="text-xs text-green-600 mt-1">
                           Recorded: {new Date(fellowRiskHistory[0].actioned_at).toLocaleString()}
@@ -526,7 +537,7 @@ export default function RiskDashboardPage() {
                       <p className="text-sm font-medium text-gray-900 mb-2">Record Action Taken</p>
                       <div className="flex gap-2">
                         <select
-                          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                           value={selectedAction}
                           onChange={(e) => setSelectedAction(e.target.value)}
                         >
@@ -554,24 +565,25 @@ export default function RiskDashboardPage() {
 
               {/* Risk Score History */}
               <div>
-                <h4 className="font-medium text-gray-900 mb-3">Risk Score History</h4>
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4" /> Risk Score History
+                </h4>
                 {fellowRiskHistory.length === 0 ? (
                   <p className="text-sm text-gray-500">No risk assessment history.</p>
                 ) : (
                   <>
-                    {/* Bar visualization */}
-                    <div className="flex items-end gap-2 h-24 mb-4">
+                    {/* Bar chart */}
+                    <div className="flex items-end gap-2 h-28 mb-4">
                       {[...fellowRiskHistory].reverse().map((assessment) => {
-                        const heightPct = assessment.risk_score * 100;
-                        const color = assessment.risk_score < 0.25 ? 'bg-green-500' :
-                          assessment.risk_score < 0.5 ? 'bg-yellow-500' :
-                          assessment.risk_score < 0.75 ? 'bg-orange-500' : 'bg-red-500';
+                        const pct = assessment.risk_score * 100;
+                        const colors = RISK_COLORS[assessment.risk_level] || RISK_COLORS.on_track;
                         return (
                           <div key={assessment.id} className="flex-1 flex flex-col items-center justify-end h-full">
+                            <span className="text-xs font-semibold mb-1">{Math.round(pct)}</span>
                             <div
-                              className={`w-full rounded-t ${color}`}
-                              style={{ height: `${Math.max(heightPct, 4)}%` }}
-                              title={`Week ${assessment.week}: ${assessment.risk_score.toFixed(2)} (${formatRiskLevel(assessment.risk_level)})`}
+                              className={`w-full rounded-t ${colors.bar}`}
+                              style={{ height: `${Math.max(pct, 4)}%` }}
+                              title={`Week ${assessment.week}: ${Math.round(pct)} (${formatRiskLevel(assessment.risk_level)})`}
                             />
                             <span className="text-xs text-gray-500 mt-1">W{assessment.week}</span>
                           </div>
@@ -579,25 +591,29 @@ export default function RiskDashboardPage() {
                       })}
                     </div>
 
-                    {/* List view */}
+                    {/* History list */}
                     <div className="space-y-2">
-                      {fellowRiskHistory.map((assessment) => (
-                        <div key={assessment.id} className="flex items-center justify-between rounded-lg border p-3">
-                          <div className="flex items-center gap-3">
-                            <Badge variant="secondary">Week {assessment.week}</Badge>
-                            {getRiskIcon(assessment.risk_level)}
-                            <Badge variant={getRiskBadgeVariant(assessment.risk_level)}>
-                              {formatRiskLevel(assessment.risk_level)}
-                            </Badge>
+                      {fellowRiskHistory.map((assessment) => {
+                        const colors = RISK_COLORS[assessment.risk_level] || RISK_COLORS.on_track;
+                        return (
+                          <div key={assessment.id} className="flex items-center justify-between rounded-lg border p-3">
+                            <div className="flex items-center gap-3">
+                              <Badge variant="secondary">Week {assessment.week}</Badge>
+                              <Badge variant={colors.badge}>
+                                {formatRiskLevel(assessment.risk_level)}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm font-semibold">{Math.round(assessment.risk_score * 100)}/100</span>
+                              {assessment.action_taken && (
+                                <Badge variant="success" className="capitalize text-xs">
+                                  {assessment.action_taken.replace(/_/g, ' ')}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-semibold">{assessment.risk_score.toFixed(2)}</span>
-                            {assessment.action_taken && (
-                              <Badge variant="success" className="capitalize">{assessment.action_taken.replace(/_/g, ' ')}</Badge>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </>
                 )}
