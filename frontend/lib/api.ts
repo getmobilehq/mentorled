@@ -219,6 +219,8 @@ export const riskAPI = {
     api.get(`/api/risk/week/${week}`, { params: { cohort_id: cohortId } }),
   assessBulk: (cohortId: string, week: number) =>
     api.post(`/api/risk/assess-bulk?cohort_id=${cohortId}&week=${week}`),
+  getAlerts: (cohortId: string) =>
+    api.get(`/api/risk/alerts/${cohortId}`),
 };
 
 export const warningsAPI = {
@@ -344,6 +346,18 @@ export const emailTemplatesAPI = {
 export const teamsAPI = {
   list: (cohortId?: string) =>
     api.get('/api/teams/', { params: { cohort_id: cohortId } }),
+  get: (id: string) =>
+    api.get(`/api/teams/${id}`),
+  create: (data: any) =>
+    api.post('/api/teams/', data),
+  update: (id: string, data: any) =>
+    api.put(`/api/teams/${id}`, data),
+  assignFellow: (teamId: string, fellowId: string) =>
+    api.post(`/api/teams/${teamId}/assign-fellow?fellow_id=${fellowId}`),
+  removeFellow: (teamId: string, fellowId: string) =>
+    api.post(`/api/teams/${teamId}/remove-fellow?fellow_id=${fellowId}`),
+  getMentors: () =>
+    api.get('/api/teams/mentors/list'),
 };
 
 export const sprintsAPI = {

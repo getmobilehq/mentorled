@@ -86,6 +86,14 @@ export default function SprintBoardPage() {
   // Generate sprints
   const [generating, setGenerating] = useState(false);
 
+  // Absence approval
+  const [approvingAbsence, setApprovingAbsence] = useState<string | null>(null);
+
+  // Meeting detail modal
+  const [meetingDetailOpen, setMeetingDetailOpen] = useState(false);
+  const [meetingDetail, setMeetingDetail] = useState<any>(null);
+  const [loadingMeetingDetail, setLoadingMeetingDetail] = useState(false);
+
   // Tabs
   const [activeTab, setActiveTab] = useState('objectives');
 
@@ -100,6 +108,16 @@ export default function SprintBoardPage() {
     evidence_type: '' as EvidenceType | '',
   });
   const [savingObjective, setSavingObjective] = useState(false);
+
+  // Retrospective form
+  const [retroForm, setRetroForm] = useState({
+    what_worked: [''],
+    what_didnt_work: [''],
+    what_to_improve: [''],
+    team_mood: '' as string,
+    sprint_rating: 7,
+  });
+  const [savingRetro, setSavingRetro] = useState(false);
 
   // Sprint goal edit
   const [editingGoal, setEditingGoal] = useState(false);
@@ -373,6 +391,81 @@ export default function SprintBoardPage() {
     }
   };
 
+  // Retrospective submission
+  const handleSubmitRetro = async () => {
+    if (!selectedSprintId) return;
+    setSavingRetro(true);
+    try {
+      await retrospectivesAPI.submit({
+        sprint_id: selectedSprintId,
+        what_worked: retroForm.what_worked.filter(s => s.trim()),
+        what_didnt_work: retroForm.what_didnt_work.filter(s => s.trim()),
+        what_to_improve: retroForm.what_to_improve.filter(s => s.trim()),
+        team_mood: retroForm.team_mood || undefined,
+        sprint_rating: retroForm.sprint_rating,
+      });
+      await fetchSprintDetail();
+      setRetroForm({
+        what_worked: [''], what_didnt_work: [''], what_to_improve: [''],
+        team_mood: '', sprint_rating: 7,
+      });
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Failed to submit retrospective');
+    } finally {
+      setSavingRetro(false);
+    }
+  };
+
+  const updateRetroList = (field: 'what_worked' | 'what_didnt_work' | 'what_to_improve', index: number, value: string) => {
+    setRetroForm(prev => {
+      const updated = [...prev[field]];
+      updated[index] = value;
+      return { ...prev, [field]: updated };
+    });
+  };
+
+  const addRetroListItem = (field: 'what_worked' | 'what_didnt_work' | 'what_to_improve') => {
+    setRetroForm(prev => ({
+      ...prev,
+      [field]: [...prev[field], ''],
+    }));
+  };
+
+  const removeRetroListItem = (field: 'what_worked' | 'what_didnt_work' | 'what_to_improve', index: number) => {
+    setRetroForm(prev => ({
+      ...prev,
+      [field]: prev[field].filter((_, i) => i !== index),
+    }));
+  };
+
+  // Approve absence
+  const handleApproveAbsence = async (fellowId: string) => {
+    // Find a meeting where this fellow is absent
+    // We need to find the meeting_id. For simplicity, we'll use the attendance summary.
+    // The approve endpoint needs a meeting_id, so we need to get the fellow's attendance records first.
+    setApprovingAbsence(fellowId);
+    try {
+      const historyRes = await attendanceAPI.getFellowHistory(fellowId);
+      const absentRecords = historyRes.data.filter(
+        (r: any) => r.status === 'absent' && meetings.some((m: Meeting) => m.id === r.meeting_id)
+      );
+      if (absentRecords.length === 0) {
+        alert('No absent meetings found for this fellow in current sprint.');
+        return;
+      }
+      // Approve the most recent absent record
+      await attendanceAPI.approveAbsence(absentRecords[0].meeting_id, fellowId);
+      // Refresh attendance
+      const attRes = await attendanceAPI.getTeamSummary(selectedTeamId);
+      setAttendanceSummary(attRes.data);
+    } catch (error) {
+      console.error('Error approving absence:', error);
+      alert('Failed to approve absence.');
+    } finally {
+      setApprovingAbsence(null);
+    }
+  };
+
   // Format date helper
   const formatDate = (dateStr: string) => {
     return new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00')).toLocaleDateString('en-US', {
@@ -384,6 +477,39 @@ export default function SprintBoardPage() {
     return new Date(dateStr).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     });
+  };
+
+  const handleViewMeeting = async (meetingId: string) => {
+    setMeetingDetailOpen(true);
+    setLoadingMeetingDetail(true);
+    try {
+      const res = await meetingsAPI.get(meetingId);
+      setMeetingDetail(res.data);
+    } catch (error) {
+      console.error('Error fetching meeting detail:', error);
+    } finally {
+      setLoadingMeetingDetail(false);
+    }
+  };
+
+  const getUnlockCountdown = (unlockTime: string): string => {
+    const now = new Date().getTime();
+    const unlock = new Date(unlockTime).getTime();
+    const diff = unlock - now;
+    if (diff <= 0) return 'Unlocking...';
+    const hours = Math.floor(diff / 3600000);
+    const minutes = Math.floor((diff % 3600000) / 60000);
+    if (hours > 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
+  const getMeetingAttendanceStatus = (meetingId: string): string => {
+    if (!meetingDetail || meetingDetail.id !== meetingId) return '';
+    const records = meetingDetail.attendance_records || [];
+    if (records.length === 0) return '';
+    const present = records.filter((r: any) => r.status === 'present').length;
+    return `${present}/${records.length}`;
   };
 
   if (loading) {
@@ -750,6 +876,9 @@ export default function SprintBoardPage() {
                 <TabsTrigger value="team" active={activeTab === 'team'} onClick={() => setActiveTab('team')}>
                   Team ({teamFellows.length})
                 </TabsTrigger>
+                <TabsTrigger value="analytics" active={activeTab === 'analytics'} onClick={() => setActiveTab('analytics')}>
+                  Analytics
+                </TabsTrigger>
                 {selectedSprint.status === 'completed' && (
                   <TabsTrigger value="retrospective" active={activeTab === 'retrospective'} onClick={() => setActiveTab('retrospective')}>
                     Retrospective
@@ -846,7 +975,17 @@ export default function SprintBoardPage() {
               <TabsContent value="meetings" activeValue={activeTab}>
                 <Card padding={false}>
                   <CardHeader className="px-6 pt-6">
-                    <CardTitle>Sprint Meetings</CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>Sprint Meetings</CardTitle>
+                      <div className="flex gap-3 text-xs text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-green-500" /> Completed: {meetings.filter(m => m.status === 'completed').length}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-blue-500" /> Scheduled: {meetings.filter(m => m.status === 'scheduled').length}
+                        </span>
+                      </div>
+                    </div>
                   </CardHeader>
                   <CardContent className="px-0">
                     {loadingDetail ? (
@@ -859,44 +998,56 @@ export default function SprintBoardPage() {
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-100">
-                        {meetings.map((meeting) => (
-                          <div key={meeting.id} className="flex items-center justify-between px-6 py-4 hover:bg-gray-50">
-                            <div className="flex items-center gap-4">
-                              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${MEETING_TYPE_ICONS[meeting.meeting_type] || 'bg-gray-100 text-gray-600'}`}>
-                                <Calendar className="h-5 w-5" />
+                        {meetings.map((meeting) => {
+                          const isPast = new Date(meeting.scheduled_at) < new Date();
+                          const isLocked = meeting.is_locked && meeting.status === 'scheduled';
+                          return (
+                            <div
+                              key={meeting.id}
+                              className={`flex items-center justify-between px-6 py-4 cursor-pointer transition-colors ${
+                                meeting.status === 'completed' ? 'hover:bg-green-50' : 'hover:bg-gray-50'
+                              }`}
+                              onClick={() => handleViewMeeting(meeting.id)}
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${MEETING_TYPE_ICONS[meeting.meeting_type] || 'bg-gray-100 text-gray-600'}`}>
+                                  <Calendar className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {MEETING_TYPE_LABELS[meeting.meeting_type] || meeting.meeting_type}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {formatDateTime(meeting.scheduled_at)}
+                                    <span className="ml-2 text-gray-400">({meeting.duration_minutes} min)</span>
+                                  </p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">
-                                  {MEETING_TYPE_LABELS[meeting.meeting_type] || meeting.meeting_type}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {formatDateTime(meeting.scheduled_at)}
-                                  <span className="ml-2 text-gray-400">({meeting.duration_minutes} min)</span>
-                                </p>
+                              <div className="flex items-center gap-3">
+                                {/* Unlock countdown */}
+                                {isLocked && !isPast && meeting.unlock_time && (
+                                  <span className="text-xs text-orange-600 flex items-center gap-1 bg-orange-50 px-2 py-1 rounded">
+                                    <Clock className="h-3 w-3" /> Unlocks in {getUnlockCountdown(meeting.unlock_time)}
+                                  </span>
+                                )}
+                                <Badge variant={meeting.status === 'completed' ? 'success' : meeting.status === 'active' ? 'info' : 'default'}>
+                                  {meeting.status}
+                                </Badge>
+                                {meeting.meeting_link && (
+                                  <a
+                                    href={meeting.meeting_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <ExternalLink className="h-3 w-3" /> Join
+                                  </a>
+                                )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <Badge variant={meeting.status === 'completed' ? 'success' : meeting.status === 'active' ? 'info' : 'default'}>
-                                {meeting.status}
-                              </Badge>
-                              {meeting.meeting_link && (
-                                <a
-                                  href={meeting.meeting_link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                                >
-                                  <ExternalLink className="h-3 w-3" /> Join
-                                </a>
-                              )}
-                              {meeting.is_locked && meeting.status === 'scheduled' && (
-                                <span className="text-xs text-gray-400 flex items-center gap-1">
-                                  <Clock className="h-3 w-3" /> Locked
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </CardContent>
@@ -939,7 +1090,9 @@ export default function SprintBoardPage() {
                             <TableHead>Late</TableHead>
                             <TableHead>Very Late</TableHead>
                             <TableHead>Absent</TableHead>
+                            <TableHead>Approved</TableHead>
                             <TableHead>Score</TableHead>
+                            <TableHead className="text-right">-</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -966,6 +1119,11 @@ export default function SprintBoardPage() {
                                 </span>
                               </TableCell>
                               <TableCell>
+                                <span className={member.approved_absence_count > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'}>
+                                  {member.approved_absence_count}
+                                </span>
+                              </TableCell>
+                              <TableCell>
                                 <div className="flex items-center gap-2">
                                   <div className="w-16 bg-gray-200 rounded-full h-2">
                                     <div
@@ -980,6 +1138,18 @@ export default function SprintBoardPage() {
                                     {(member.attendance_score * 100).toFixed(0)}%
                                   </span>
                                 </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {member.absent_count > 0 && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    disabled={approvingAbsence === member.fellow_id}
+                                    onClick={() => handleApproveAbsence(member.fellow_id)}
+                                  >
+                                    {approvingAbsence === member.fellow_id ? 'Approving...' : 'Approve Absence'}
+                                  </Button>
+                                )}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -1086,15 +1256,301 @@ export default function SprintBoardPage() {
                 </Card>
               </TabsContent>
 
+              {/* Analytics Tab */}
+              <TabsContent value="analytics" activeValue={activeTab}>
+                <div className="space-y-4">
+                  {/* Sprint Completion Trend */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Sprint Completion Scores</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {sprints.filter(s => s.completion_score != null).length === 0 ? (
+                        <p className="text-sm text-gray-500">No completed sprints with scores yet.</p>
+                      ) : (
+                        <div className="flex items-end gap-3 h-36">
+                          {sprints.map((sprint) => {
+                            const score = sprint.completion_score ?? 0;
+                            const isCompleted = sprint.status === 'completed';
+                            return (
+                              <div key={sprint.id} className="flex-1 flex flex-col items-center justify-end h-full">
+                                {isCompleted && (
+                                  <span className="text-xs font-semibold mb-1">{score}</span>
+                                )}
+                                <div
+                                  className={`w-full rounded-t transition-all ${
+                                    isCompleted
+                                      ? score >= 70 ? 'bg-green-500' : score >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                                      : 'bg-gray-200'
+                                  }`}
+                                  style={{ height: isCompleted ? `${Math.max(score, 4)}%` : '10%' }}
+                                  title={`Sprint ${sprint.sprint_number}: ${isCompleted ? `${score}/100` : sprint.status}`}
+                                />
+                                <span className="text-xs text-gray-500 mt-1">S{sprint.sprint_number}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Objective Status Breakdown */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Objective Status (Current Sprint)</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {objectives.length === 0 ? (
+                          <p className="text-sm text-gray-500">No objectives in this sprint.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {(['done', 'in_progress', 'not_started', 'not_done'] as const).map(status => {
+                              const count = objectives.filter(o => o.status === status).length;
+                              const pct = Math.round((count / objectives.length) * 100);
+                              return (
+                                <div key={status} className="flex items-center gap-3">
+                                  <span className="w-24 text-sm text-gray-600">{OBJECTIVE_STATUS_LABELS[status]}</span>
+                                  <div className="flex-1 bg-gray-200 rounded-full h-3">
+                                    <div
+                                      className={`h-3 rounded-full ${
+                                        status === 'done' ? 'bg-green-500' :
+                                        status === 'in_progress' ? 'bg-yellow-500' :
+                                        status === 'not_done' ? 'bg-red-500' : 'bg-gray-400'
+                                      }`}
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                  <span className="w-12 text-sm font-semibold text-right">{count} ({pct}%)</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Team Velocity */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Team Velocity (Objectives/Sprint)</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-end gap-3 h-28">
+                          {sprints.map((sprint) => {
+                            const done = sprint.completed_objectives || 0;
+                            const total = sprint.objective_count || 0;
+                            const maxDone = Math.max(...sprints.map(s => s.completed_objectives || 0), 1);
+                            const barHeight = (done / maxDone) * 100;
+                            return (
+                              <div key={sprint.id} className="flex-1 flex flex-col items-center justify-end h-full">
+                                {done > 0 && <span className="text-xs font-semibold mb-1">{done}/{total}</span>}
+                                <div
+                                  className={`w-full rounded-t ${
+                                    sprint.status === 'completed' ? 'bg-blue-500' :
+                                    sprint.status === 'active' ? 'bg-green-400' : 'bg-gray-200'
+                                  }`}
+                                  style={{ height: `${Math.max(barHeight, 4)}%` }}
+                                />
+                                <span className="text-xs text-gray-500 mt-1">S{sprint.sprint_number}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Attendance Summary */}
+                  {attendanceSummary && attendanceSummary.members.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Attendance Overview</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-4 gap-4 text-center text-sm">
+                          <div className="rounded-lg bg-green-50 p-3">
+                            <p className="text-xl font-bold text-green-600">
+                              {(attendanceSummary.team_average * 100).toFixed(0)}%
+                            </p>
+                            <p className="text-xs text-gray-500">Team Average</p>
+                          </div>
+                          <div className="rounded-lg bg-blue-50 p-3">
+                            <p className="text-xl font-bold text-blue-600">
+                              {attendanceSummary.total_meetings}
+                            </p>
+                            <p className="text-xs text-gray-500">Total Meetings</p>
+                          </div>
+                          <div className="rounded-lg bg-yellow-50 p-3">
+                            <p className="text-xl font-bold text-yellow-600">
+                              {attendanceSummary.members.reduce((sum, m) => sum + m.late_count + m.very_late_count, 0)}
+                            </p>
+                            <p className="text-xs text-gray-500">Total Late</p>
+                          </div>
+                          <div className="rounded-lg bg-red-50 p-3">
+                            <p className="text-xl font-bold text-red-600">
+                              {attendanceSummary.members.reduce((sum, m) => sum + m.absent_count, 0)}
+                            </p>
+                            <p className="text-xs text-gray-500">Total Absent</p>
+                          </div>
+                        </div>
+
+                        {/* Per-member bar chart */}
+                        <div className="mt-4 space-y-2">
+                          {attendanceSummary.members
+                            .sort((a, b) => b.attendance_score - a.attendance_score)
+                            .map((member) => (
+                              <div key={member.fellow_id} className="flex items-center gap-3">
+                                <span className="w-28 text-sm text-gray-600 truncate">{member.fellow_name}</span>
+                                <div className="flex-1 bg-gray-200 rounded-full h-3">
+                                  <div
+                                    className={`h-3 rounded-full ${
+                                      member.attendance_score >= 0.9 ? 'bg-green-500' :
+                                      member.attendance_score >= 0.7 ? 'bg-yellow-500' : 'bg-red-500'
+                                    }`}
+                                    style={{ width: `${member.attendance_score * 100}%` }}
+                                  />
+                                </div>
+                                <span className="w-10 text-sm font-semibold text-right">
+                                  {(member.attendance_score * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
+
               {/* Retrospective Tab */}
               {selectedSprint.status === 'completed' && (
                 <TabsContent value="retrospective" activeValue={activeTab}>
                   <Card>
                     {!retrospective ? (
-                      <div className="py-12 text-center">
-                        <Lightbulb className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-2 text-sm font-medium text-gray-900">No retrospective</h3>
-                        <p className="mt-1 text-sm text-gray-500">No retrospective has been submitted for this sprint.</p>
+                      <div className="space-y-5">
+                        <h3 className="text-lg font-semibold text-gray-900">Submit Sprint {selectedSprint.sprint_number} Retrospective</h3>
+
+                        {/* Three columns */}
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                          {/* What worked */}
+                          <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <ThumbsUp className="h-5 w-5 text-green-600" />
+                              <h4 className="font-semibold text-green-800">What Worked</h4>
+                            </div>
+                            <div className="space-y-2">
+                              {retroForm.what_worked.map((item, i) => (
+                                <div key={i} className="flex gap-1">
+                                  <input
+                                    type="text"
+                                    value={item}
+                                    onChange={(e) => updateRetroList('what_worked', i, e.target.value)}
+                                    className="flex-1 px-2 py-1 text-sm border border-green-200 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                                    placeholder="Something that went well..."
+                                  />
+                                  {retroForm.what_worked.length > 1 && (
+                                    <button onClick={() => removeRetroListItem('what_worked', i)} className="text-red-400 hover:text-red-600 text-xs">x</button>
+                                  )}
+                                </div>
+                              ))}
+                              <button onClick={() => addRetroListItem('what_worked')} className="text-xs text-green-600 hover:text-green-800">+ Add item</button>
+                            </div>
+                          </div>
+
+                          {/* What didn't work */}
+                          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <ThumbsDown className="h-5 w-5 text-red-600" />
+                              <h4 className="font-semibold text-red-800">What Didn&apos;t Work</h4>
+                            </div>
+                            <div className="space-y-2">
+                              {retroForm.what_didnt_work.map((item, i) => (
+                                <div key={i} className="flex gap-1">
+                                  <input
+                                    type="text"
+                                    value={item}
+                                    onChange={(e) => updateRetroList('what_didnt_work', i, e.target.value)}
+                                    className="flex-1 px-2 py-1 text-sm border border-red-200 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                    placeholder="Something that needs change..."
+                                  />
+                                  {retroForm.what_didnt_work.length > 1 && (
+                                    <button onClick={() => removeRetroListItem('what_didnt_work', i)} className="text-red-400 hover:text-red-600 text-xs">x</button>
+                                  )}
+                                </div>
+                              ))}
+                              <button onClick={() => addRetroListItem('what_didnt_work')} className="text-xs text-red-600 hover:text-red-800">+ Add item</button>
+                            </div>
+                          </div>
+
+                          {/* What to improve */}
+                          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Lightbulb className="h-5 w-5 text-blue-600" />
+                              <h4 className="font-semibold text-blue-800">What to Improve</h4>
+                            </div>
+                            <div className="space-y-2">
+                              {retroForm.what_to_improve.map((item, i) => (
+                                <div key={i} className="flex gap-1">
+                                  <input
+                                    type="text"
+                                    value={item}
+                                    onChange={(e) => updateRetroList('what_to_improve', i, e.target.value)}
+                                    className="flex-1 px-2 py-1 text-sm border border-blue-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    placeholder="Improvement idea..."
+                                  />
+                                  {retroForm.what_to_improve.length > 1 && (
+                                    <button onClick={() => removeRetroListItem('what_to_improve', i)} className="text-red-400 hover:text-red-600 text-xs">x</button>
+                                  )}
+                                </div>
+                              ))}
+                              <button onClick={() => addRetroListItem('what_to_improve')} className="text-xs text-blue-600 hover:text-blue-800">+ Add item</button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Mood & Rating */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Team Mood</label>
+                            <select
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                              value={retroForm.team_mood}
+                              onChange={(e) => setRetroForm(prev => ({ ...prev, team_mood: e.target.value }))}
+                            >
+                              <option value="">Select mood...</option>
+                              <option value="energized">Energized</option>
+                              <option value="positive">Positive</option>
+                              <option value="neutral">Neutral</option>
+                              <option value="tired">Tired</option>
+                              <option value="frustrated">Frustrated</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Sprint Rating ({retroForm.sprint_rating}/10)
+                            </label>
+                            <input
+                              type="range"
+                              min="1"
+                              max="10"
+                              className="w-full mt-2"
+                              value={retroForm.sprint_rating}
+                              onChange={(e) => setRetroForm(prev => ({ ...prev, sprint_rating: parseInt(e.target.value) }))}
+                            />
+                            <div className="flex justify-between text-xs text-gray-400">
+                              <span>Poor</span>
+                              <span>Excellent</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end">
+                          <Button onClick={handleSubmitRetro} disabled={savingRetro}>
+                            {savingRetro ? 'Submitting...' : 'Submit Retrospective'}
+                          </Button>
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-6">
@@ -1178,6 +1634,134 @@ export default function SprintBoardPage() {
             </Tabs>
           </>
         )}
+
+        {/* Meeting Detail Modal */}
+        <Modal
+          open={meetingDetailOpen}
+          onOpenChange={setMeetingDetailOpen}
+          title={meetingDetail ? `${MEETING_TYPE_LABELS[meetingDetail.meeting_type] || meetingDetail.meeting_type}` : 'Meeting Detail'}
+          size="lg"
+        >
+          {loadingMeetingDetail ? (
+            <div className="py-8 text-center text-gray-500">Loading meeting details...</div>
+          ) : meetingDetail ? (
+            <div className="space-y-5">
+              {/* Meeting Info */}
+              <div className={`rounded-lg p-4 ${MEETING_TYPE_ICONS[meetingDetail.meeting_type]?.split(' ')[0] || 'bg-gray-100'} bg-opacity-50`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {MEETING_TYPE_LABELS[meetingDetail.meeting_type] || meetingDetail.meeting_type}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {formatDateTime(meetingDetail.scheduled_at)} ({meetingDetail.duration_minutes} min)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={meetingDetail.status === 'completed' ? 'success' : meetingDetail.status === 'active' ? 'info' : 'default'}>
+                      {meetingDetail.status}
+                    </Badge>
+                    {meetingDetail.is_locked && meetingDetail.status === 'scheduled' && (
+                      <Badge variant="warning">Locked</Badge>
+                    )}
+                  </div>
+                </div>
+                {meetingDetail.meeting_link && (
+                  <a
+                    href={meetingDetail.meeting_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 mt-2 text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    <ExternalLink className="h-3 w-3" /> Meeting Link
+                  </a>
+                )}
+              </div>
+
+              {/* Unlock Info */}
+              {meetingDetail.is_locked && meetingDetail.status === 'scheduled' && (
+                <div className="flex items-center gap-2 rounded-lg bg-orange-50 border border-orange-200 p-3">
+                  <Clock className="h-4 w-4 text-orange-600" />
+                  <div>
+                    <p className="text-sm font-medium text-orange-800">Meeting Locked</p>
+                    <p className="text-xs text-orange-600">
+                      Unlocks at {new Date(meetingDetail.unlock_time).toLocaleString('en-US', {
+                        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                      })}
+                      {new Date(meetingDetail.unlock_time) > new Date() && (
+                        <span className="ml-1 font-medium">({getUnlockCountdown(meetingDetail.unlock_time)})</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Attendance Records */}
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4" /> Attendance ({meetingDetail.attendance_records?.length || 0} records)
+                </h4>
+                {(!meetingDetail.attendance_records || meetingDetail.attendance_records.length === 0) ? (
+                  <p className="text-sm text-gray-500 py-4 text-center">No attendance recorded yet.</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fellow</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Joined At</TableHead>
+                        <TableHead>Minutes Late</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {meetingDetail.attendance_records.map((record: any) => {
+                        const fellow = teamFellows.find(f => f.id === record.fellow_id);
+                        const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'default'> = {
+                          present: 'success',
+                          late: 'warning',
+                          very_late: 'danger',
+                          absent: 'danger',
+                          approved_absence: 'info',
+                        };
+                        return (
+                          <TableRow key={record.id}>
+                            <TableCell className="font-medium">
+                              {fellow?.name || record.fellow_id.slice(0, 8)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={statusVariant[record.status] || 'default'}>
+                                {record.status.replace(/_/g, ' ')}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm text-gray-600">
+                              {record.joined_at
+                                ? new Date(record.joined_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+                                : '-'}
+                            </TableCell>
+                            <TableCell>
+                              {record.minutes_late != null ? (
+                                <span className={`text-sm font-medium ${
+                                  record.minutes_late === 0 ? 'text-green-600' :
+                                  record.minutes_late <= 5 ? 'text-yellow-600' : 'text-red-600'
+                                }`}>
+                                  {record.minutes_late === 0 ? 'On time' : `${record.minutes_late} min`}
+                                </span>
+                              ) : '-'}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-4 border-t">
+                <Button variant="secondary" onClick={() => setMeetingDetailOpen(false)}>Close</Button>
+              </div>
+            </div>
+          ) : null}
+        </Modal>
 
         {/* Objective Modal */}
         <Modal

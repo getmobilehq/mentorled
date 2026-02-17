@@ -171,6 +171,19 @@ export interface RiskAssessmentDetail {
   assessed_at: string;
 }
 
+export type RiskAlertType = 'high_absences' | 'low_attendance' | 'low_sentiment' | 'persistent_risk' | 'low_energy';
+export type RiskAlertSeverity = 'critical' | 'high' | 'medium';
+
+export interface RiskAlert {
+  fellow_id: string;
+  fellow_name: string;
+  alert_type: RiskAlertType;
+  severity: RiskAlertSeverity;
+  message: string;
+  recommended_action: string;
+  value: number;
+}
+
 export interface Warning {
   id: string;
   fellow_id: string;

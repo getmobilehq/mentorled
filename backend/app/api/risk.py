@@ -1,13 +1,16 @@
 """Risk Assessment API endpoints."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func, and_
 from typing import List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.models.risk_assessment import RiskAssessment
+from app.models.attendance import Attendance, AttendanceStatus
+from app.models.meeting import Meeting
+from app.models.check_in import CheckIn
 from app.models.fellow import Fellow
 from app.models.user import User, UserRole
 from app.schemas.check_in import RiskAssessmentResponse
@@ -191,3 +194,162 @@ async def get_assessments_by_week(
     result = await db.execute(query)
     assessments = result.scalars().all()
     return assessments
+
+
+@router.get("/alerts/{cohort_id}")
+async def get_risk_alerts(
+    cohort_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Detect patterns and return alerts for fellows in a cohort.
+    Checks: high absences, low attendance rate, low sentiment, consecutive at_risk/critical.
+    """
+    from sqlalchemy.orm import selectinload
+
+    # Get all fellows in cohort
+    fellows_result = await db.execute(
+        select(Fellow)
+        .options(selectinload(Fellow.applicant))
+        .where(Fellow.cohort_id == cohort_id)
+    )
+    fellows = fellows_result.scalars().all()
+    if not fellows:
+        return []
+
+    alerts = []
+    two_weeks_ago = datetime.utcnow() - timedelta(days=14)
+
+    for fellow in fellows:
+        fellow_name = fellow.applicant.name if fellow.applicant else "Unknown"
+
+        # 1. Check absences in last 2 weeks (3+ absences)
+        absence_result = await db.execute(
+            select(func.count())
+            .select_from(Attendance)
+            .join(Meeting, Attendance.meeting_id == Meeting.id)
+            .where(
+                Attendance.fellow_id == fellow.id,
+                Attendance.status == AttendanceStatus.ABSENT,
+                Meeting.scheduled_at >= two_weeks_ago,
+            )
+        )
+        recent_absences = absence_result.scalar() or 0
+        if recent_absences >= 3:
+            alerts.append({
+                "fellow_id": str(fellow.id),
+                "fellow_name": fellow_name,
+                "alert_type": "high_absences",
+                "severity": "critical" if recent_absences >= 5 else "high",
+                "message": f"{recent_absences} absences in last 2 weeks",
+                "recommended_action": "Schedule immediate 1-on-1 meeting",
+                "value": recent_absences,
+            })
+
+        # 2. Check overall attendance rate (below 80%)
+        total_meetings_result = await db.execute(
+            select(func.count())
+            .select_from(Attendance)
+            .where(Attendance.fellow_id == fellow.id)
+        )
+        total_records = total_meetings_result.scalar() or 0
+
+        if total_records >= 5:  # Need enough data
+            present_result = await db.execute(
+                select(func.count())
+                .select_from(Attendance)
+                .where(
+                    Attendance.fellow_id == fellow.id,
+                    Attendance.status.in_([
+                        AttendanceStatus.PRESENT,
+                        AttendanceStatus.LATE,
+                        AttendanceStatus.APPROVED_ABSENCE,
+                    ]),
+                )
+            )
+            present_count = present_result.scalar() or 0
+            attendance_rate = present_count / total_records
+            if attendance_rate < 0.8:
+                alerts.append({
+                    "fellow_id": str(fellow.id),
+                    "fellow_name": fellow_name,
+                    "alert_type": "low_attendance",
+                    "severity": "critical" if attendance_rate < 0.6 else "high",
+                    "message": f"Attendance rate at {round(attendance_rate * 100)}%",
+                    "recommended_action": "Review attendance pattern with fellow",
+                    "value": round(attendance_rate * 100),
+                })
+
+        # 3. Check low sentiment (below 0.3 for 2+ consecutive weeks)
+        checkins_result = await db.execute(
+            select(CheckIn)
+            .where(CheckIn.fellow_id == fellow.id)
+            .order_by(desc(CheckIn.week))
+            .limit(3)
+        )
+        recent_checkins = checkins_result.scalars().all()
+        low_sentiment_weeks = 0
+        for ci in recent_checkins:
+            if ci.sentiment_score is not None and float(ci.sentiment_score) < 0.3:
+                low_sentiment_weeks += 1
+            else:
+                break
+        if low_sentiment_weeks >= 2:
+            alerts.append({
+                "fellow_id": str(fellow.id),
+                "fellow_name": fellow_name,
+                "alert_type": "low_sentiment",
+                "severity": "high",
+                "message": f"Low sentiment for {low_sentiment_weeks} consecutive weeks",
+                "recommended_action": "Check in on fellow wellbeing",
+                "value": low_sentiment_weeks,
+            })
+
+        # 4. Check consecutive at_risk/critical assessments (2+)
+        assessments_result = await db.execute(
+            select(RiskAssessment)
+            .where(RiskAssessment.fellow_id == fellow.id)
+            .order_by(desc(RiskAssessment.week))
+            .limit(3)
+        )
+        recent_assessments = assessments_result.scalars().all()
+        consecutive_risky = 0
+        for ra in recent_assessments:
+            if ra.risk_level in ("at_risk", "critical"):
+                consecutive_risky += 1
+            else:
+                break
+        if consecutive_risky >= 2:
+            alerts.append({
+                "fellow_id": str(fellow.id),
+                "fellow_name": fellow_name,
+                "alert_type": "persistent_risk",
+                "severity": "critical" if consecutive_risky >= 3 else "high",
+                "message": f"At risk/critical for {consecutive_risky} consecutive weeks",
+                "recommended_action": "Consider formal intervention or warning",
+                "value": consecutive_risky,
+            })
+
+        # 5. Check low energy (energy_level <= 2 for 2+ weeks)
+        low_energy_weeks = 0
+        for ci in recent_checkins:
+            if ci.energy_level is not None and ci.energy_level <= 2:
+                low_energy_weeks += 1
+            else:
+                break
+        if low_energy_weeks >= 2:
+            alerts.append({
+                "fellow_id": str(fellow.id),
+                "fellow_name": fellow_name,
+                "alert_type": "low_energy",
+                "severity": "high" if low_energy_weeks >= 3 else "medium",
+                "message": f"Low energy for {low_energy_weeks} consecutive weeks",
+                "recommended_action": "Discuss workload and support needs",
+                "value": low_energy_weeks,
+            })
+
+    # Sort by severity (critical first, then high, then medium)
+    severity_order = {"critical": 0, "high": 1, "medium": 2}
+    alerts.sort(key=lambda a: severity_order.get(a["severity"], 3))
+
+    return alerts

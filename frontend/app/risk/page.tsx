@@ -13,7 +13,7 @@ import {
   Users, Shield, BarChart3, Activity, Target, Calendar,
   Clock, Eye, Zap,
 } from 'lucide-react';
-import type { Cohort, RiskAssessmentDetail, RiskSignals, RiskConcern } from '@/types';
+import type { Cohort, RiskAssessmentDetail, RiskSignals, RiskConcern, RiskAlert } from '@/types';
 
 // Signal display configuration
 const SIGNAL_CONFIG: Record<keyof RiskSignals, { label: string; weight: string; icon: React.ReactNode }> = {
@@ -86,13 +86,18 @@ export default function RiskDashboardPage() {
   const [recordingAction, setRecordingAction] = useState(false);
   const [assessing, setAssessing] = useState(false);
   const [assessResult, setAssessResult] = useState<string | null>(null);
+  const [alerts, setAlerts] = useState<RiskAlert[]>([]);
+  const [alertsDismissed, setAlertsDismissed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchCohorts();
   }, []);
 
   useEffect(() => {
-    if (selectedCohortId) fetchDashboard();
+    if (selectedCohortId) {
+      fetchDashboard();
+      fetchAlerts();
+    }
   }, [selectedCohortId, currentWeek]);
 
   const fetchCohorts = async () => {
@@ -116,6 +121,21 @@ export default function RiskDashboardPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchAlerts = async () => {
+    if (!selectedCohortId) return;
+    try {
+      const res = await riskAPI.getAlerts(selectedCohortId);
+      setAlerts(res.data);
+      setAlertsDismissed(new Set());
+    } catch (error) {
+      console.error('Error fetching alerts:', error);
+    }
+  };
+
+  const dismissAlert = (key: string) => {
+    setAlertsDismissed(prev => new Set([...prev, key]));
   };
 
   const handleViewFellow = async (fellow: RiskDashboardFellow) => {
@@ -238,6 +258,69 @@ export default function RiskDashboardPage() {
         {assessResult && (
           <div className={`rounded-lg border p-3 text-sm ${assessResult.includes('failed') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
             {assessResult}
+          </div>
+        )}
+
+        {/* Pattern Detection Alerts */}
+        {alerts.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-500" />
+              Pattern Alerts ({alerts.filter(a => !alertsDismissed.has(`${a.fellow_id}-${a.alert_type}`)).length})
+            </h3>
+            {alerts
+              .filter(a => !alertsDismissed.has(`${a.fellow_id}-${a.alert_type}`))
+              .map((alert) => {
+                const key = `${alert.fellow_id}-${alert.alert_type}`;
+                const severityStyles = {
+                  critical: 'bg-red-50 border-red-300 text-red-800',
+                  high: 'bg-orange-50 border-orange-300 text-orange-800',
+                  medium: 'bg-yellow-50 border-yellow-300 text-yellow-800',
+                };
+                const alertIcons: Record<string, React.ReactNode> = {
+                  high_absences: <Calendar className="h-4 w-4" />,
+                  low_attendance: <Users className="h-4 w-4" />,
+                  low_sentiment: <TrendingDown className="h-4 w-4" />,
+                  persistent_risk: <Shield className="h-4 w-4" />,
+                  low_energy: <Activity className="h-4 w-4" />,
+                };
+                const alertLabels: Record<string, string> = {
+                  high_absences: 'High Absences',
+                  low_attendance: 'Low Attendance',
+                  low_sentiment: 'Low Sentiment',
+                  persistent_risk: 'Persistent Risk',
+                  low_energy: 'Low Energy',
+                };
+                return (
+                  <div
+                    key={key}
+                    className={`flex items-center justify-between rounded-lg border p-3 ${severityStyles[alert.severity]}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {alertIcons[alert.alert_type] || <AlertTriangle className="h-4 w-4" />}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm">{alert.fellow_name}</span>
+                          <Badge variant={alert.severity === 'critical' ? 'danger' : alert.severity === 'high' ? 'warning' : 'info'}>
+                            {alertLabels[alert.alert_type] || alert.alert_type}
+                          </Badge>
+                        </div>
+                        <p className="text-xs mt-0.5">{alert.message}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs opacity-75">{alert.recommended_action}</span>
+                      <button
+                        onClick={() => dismissAlert(key)}
+                        className="text-xs opacity-50 hover:opacity-100 ml-2"
+                        title="Dismiss"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         )}
 
