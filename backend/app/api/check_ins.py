@@ -206,7 +206,7 @@ async def bulk_analyze_check_ins(
         select(CheckIn, Fellow)
         .join(Fellow, CheckIn.fellow_id == Fellow.id)
         .options(selectinload(Fellow.applicant))
-        .filter(CheckIn.analyzed_at == None)
+        .filter(CheckIn.analyzed_at.is_(None))
     )
 
     if week is not None:

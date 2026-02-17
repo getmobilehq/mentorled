@@ -78,6 +78,11 @@ export default function SprintBoardPage() {
   const [retrospective, setRetrospective] = useState<Retrospective | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Upcoming meetings
+  const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
+  const [joiningMeeting, setJoiningMeeting] = useState<string | null>(null);
+  const [joinResult, setJoinResult] = useState<{ meetingId: string; link: string; status: string } | null>(null);
+
   // Generate sprints
   const [generating, setGenerating] = useState(false);
 
@@ -111,15 +116,17 @@ export default function SprintBoardPage() {
     fetchTeams();
   }, [selectedCohortId]);
 
-  // Reload sprints and fellows when team changes
+  // Reload sprints, fellows, and upcoming meetings when team changes
   useEffect(() => {
     if (selectedTeamId) {
       fetchSprints();
       fetchTeamFellows();
+      fetchUpcomingMeetings();
     } else {
       setSprints([]);
       setSelectedSprintId('');
       setTeamFellows([]);
+      setUpcomingMeetings([]);
     }
   }, [selectedTeamId]);
 
@@ -175,6 +182,35 @@ export default function SprintBoardPage() {
       setTeamFellows(res.data.filter((f: Fellow) => f.team_id === selectedTeamId));
     } catch (error) {
       console.error('Error fetching fellows:', error);
+    }
+  };
+
+  const fetchUpcomingMeetings = async () => {
+    try {
+      const res = await meetingsAPI.upcoming(selectedTeamId, 7);
+      setUpcomingMeetings(res.data);
+    } catch (error) {
+      console.error('Error fetching upcoming meetings:', error);
+      setUpcomingMeetings([]);
+    }
+  };
+
+  const handleJoinMeeting = async (meetingId: string, fellowId: string) => {
+    setJoiningMeeting(meetingId);
+    setJoinResult(null);
+    try {
+      const res = await meetingsAPI.join(meetingId, fellowId);
+      setJoinResult({
+        meetingId,
+        link: res.data.meeting_link,
+        status: res.data.status,
+      });
+      // Refresh upcoming meetings to show updated status
+      await fetchUpcomingMeetings();
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Failed to join meeting');
+    } finally {
+      setJoiningMeeting(null);
     }
   };
 
@@ -431,6 +467,108 @@ export default function SprintBoardPage() {
                 )}
               </div>
             </div>
+          </Card>
+        )}
+
+        {/* Upcoming Meetings */}
+        {upcomingMeetings.length > 0 && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-blue-600" /> Upcoming Meetings (Next 7 Days)
+                </CardTitle>
+                <Badge variant="info">{upcomingMeetings.length}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {upcomingMeetings.map((meeting) => {
+                  const isToday = new Date(meeting.scheduled_at).toDateString() === new Date().toDateString();
+                  const isTomorrow = new Date(meeting.scheduled_at).toDateString() === new Date(Date.now() + 86400000).toDateString();
+                  const timeLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : formatDate(meeting.scheduled_at);
+
+                  return (
+                    <div
+                      key={meeting.id}
+                      className={`flex items-center justify-between rounded-lg border p-3 ${
+                        isToday ? 'border-blue-300 bg-blue-50' : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${MEETING_TYPE_ICONS[meeting.meeting_type] || 'bg-gray-100 text-gray-600'}`}>
+                          <Calendar className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {MEETING_TYPE_LABELS[meeting.meeting_type] || meeting.meeting_type}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            <span className={isToday ? 'font-semibold text-blue-600' : ''}>{timeLabel}</span>
+                            {' at '}
+                            {new Date(meeting.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                            <span className="ml-1 text-gray-400">({meeting.duration_minutes} min)</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={meeting.status === 'completed' ? 'success' : meeting.is_locked ? 'default' : 'info'}>
+                          {meeting.is_locked ? 'Locked' : meeting.status}
+                        </Badge>
+                        {joinResult?.meetingId === meeting.id ? (
+                          <div className="flex items-center gap-2">
+                            <Badge variant={joinResult.status === 'present' ? 'success' : 'warning'}>
+                              {joinResult.status === 'present' ? 'On Time' : joinResult.status.replace(/_/g, ' ')}
+                            </Badge>
+                            <a
+                              href={joinResult.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                            >
+                              <ExternalLink className="h-3 w-3" /> Open
+                            </a>
+                          </div>
+                        ) : !meeting.is_locked && meeting.status !== 'completed' ? (
+                          <div className="flex items-center gap-1">
+                            <select
+                              className="px-2 py-1 text-xs border border-gray-300 rounded-md"
+                              id={`join-fellow-${meeting.id}`}
+                              defaultValue=""
+                            >
+                              <option value="" disabled>Fellow...</option>
+                              {teamFellows.map(f => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                              ))}
+                            </select>
+                            <Button
+                              size="sm"
+                              disabled={joiningMeeting === meeting.id}
+                              onClick={() => {
+                                const el = document.getElementById(`join-fellow-${meeting.id}`) as HTMLSelectElement;
+                                if (!el?.value) { alert('Select a fellow first'); return; }
+                                handleJoinMeeting(meeting.id, el.value);
+                              }}
+                            >
+                              {joiningMeeting === meeting.id ? 'Joining...' : 'Join'}
+                            </Button>
+                          </div>
+                        ) : meeting.meeting_link ? (
+                          <a
+                            href={meeting.meeting_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                          >
+                            <ExternalLink className="h-3 w-3" /> Link
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
           </Card>
         )}
 

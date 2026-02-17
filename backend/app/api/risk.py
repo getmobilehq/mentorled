@@ -80,6 +80,26 @@ async def assess_fellow_risk(
     return db_assessment
 
 
+@router.post("/assess-bulk")
+async def assess_bulk_risk(
+    cohort_id: UUID,
+    week: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
+):
+    """
+    Perform risk assessment for all fellows in a cohort.
+    Returns summary of assessed, errors, and per-fellow results.
+    """
+    risk_service = RiskDetectionService(db)
+    try:
+        result = await risk_service.assess_cohort_bulk(cohort_id, week)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk assessment failed: {str(e)}")
+
+    return result
+
+
 @router.get("/fellow/{fellow_id}", response_model=List[RiskAssessmentResponse])
 async def get_fellow_risk_history(
     fellow_id: UUID,

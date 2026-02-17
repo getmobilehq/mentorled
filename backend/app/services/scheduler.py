@@ -13,9 +13,10 @@ from app.models.fellow import Fellow
 from app.models.check_in import CheckIn
 from app.models.challenge import Challenge, ChallengeStatus
 from app.models.microship import MicroshipSubmission
+from app.models.cohort import Cohort
 from app.agents.screening_agent import screening_agent
-from app.agents.delivery_agent import DeliveryAgent
 from app.utils.email import email_service
+from app.services.risk_service import RiskDetectionService
 
 logger = logging.getLogger(__name__)
 
@@ -145,48 +146,42 @@ class SchedulerService:
 
     async def daily_risk_assessment(self):
         """
-        Daily task: Run risk assessment for all active fellows.
-        Identify fellows who need intervention.
+        Daily task: Run 7-signal risk assessment for all active fellows.
+        Uses RiskDetectionService.assess_cohort_bulk() per cohort.
         """
         logger.info("Running daily risk assessment...")
 
         async with AsyncSessionLocal() as db:
             try:
-                # Get all active fellows
+                # Get active cohorts
                 result = await db.execute(
-                    select(Fellow).where(Fellow.status == 'active')
+                    select(Cohort).where(Cohort.status == 'active')
                 )
-                fellows = result.scalars().all()
+                cohorts = result.scalars().all()
 
-                high_risk_count = 0
-                for fellow in fellows:
+                # Estimate current program week (weeks since cohort start)
+                risk_service = RiskDetectionService(db)
+                total_assessed = 0
+                total_high_risk = 0
+
+                for cohort in cohorts:
                     try:
-                        # Get recent check-ins
-                        result = await db.execute(
-                            select(CheckIn)
-                            .where(CheckIn.fellow_id == fellow.id)
-                            .order_by(CheckIn.week_number.desc())
-                            .limit(4)
-                        )
-                        check_ins = list(result.scalars().all())
+                        # Calculate current week from cohort start
+                        days_elapsed = (datetime.utcnow().date() - cohort.start_date).days
+                        current_week = max(1, (days_elapsed // 7) + 1)
 
-                        # Run risk assessment
-                        delivery_agent = DeliveryAgent(db)
-                        assessment = await delivery_agent.assess_risk(fellow, check_ins)
+                        result = await risk_service.assess_cohort_bulk(cohort.id, current_week)
+                        total_assessed += result["assessed"]
+                        total_high_risk += result["summary"].get("at_risk", 0) + result["summary"].get("critical", 0)
 
-                        # Update fellow's risk level
-                        fellow.current_risk_level = assessment["risk_level"]
-
-                        # Flag high-risk fellows for human review
-                        if assessment["risk_level"] in ["at_risk", "critical"]:
-                            high_risk_count += 1
-                            logger.warning(f"High risk fellow detected: {fellow.id} - {assessment['risk_level']}")
-
+                        if total_high_risk > 0:
+                            logger.warning(
+                                f"Cohort {cohort.name}: {total_high_risk} high-risk fellows in week {current_week}"
+                            )
                     except Exception as e:
-                        logger.error(f"Error assessing fellow {fellow.id}: {str(e)}")
+                        logger.error(f"Error assessing cohort {cohort.id}: {str(e)}")
 
-                await db.commit()
-                logger.info(f"Risk assessment complete. {high_risk_count} high-risk fellows identified")
+                logger.info(f"Risk assessment complete. {total_assessed} assessed, {total_high_risk} high-risk")
 
             except Exception as e:
                 logger.error(f"Error in daily_risk_assessment: {str(e)}")
@@ -200,22 +195,34 @@ class SchedulerService:
 
         async with AsyncSessionLocal() as db:
             try:
-                # Get current week number (simplified)
-                current_week = datetime.utcnow().isocalendar()[1]
+                from sqlalchemy.orm import selectinload
 
-                # Get active fellows
+                # Get active fellows with their cohort to calculate current week
                 result = await db.execute(
-                    select(Fellow).where(Fellow.status == 'active')
+                    select(Fellow)
+                    .options(selectinload(Fellow.applicant))
+                    .where(Fellow.status == 'active')
                 )
                 fellows = result.scalars().all()
 
                 missing_count = 0
                 for fellow in fellows:
+                    # Get cohort to calculate program week
+                    cohort_result = await db.execute(
+                        select(Cohort).where(Cohort.id == fellow.cohort_id)
+                    )
+                    cohort = cohort_result.scalar_one_or_none()
+                    if not cohort:
+                        continue
+
+                    days_elapsed = (datetime.utcnow().date() - cohort.start_date).days
+                    current_week = max(1, (days_elapsed // 7) + 1)
+
                     # Check if check-in exists for current week
                     result = await db.execute(
                         select(CheckIn).where(
                             CheckIn.fellow_id == fellow.id,
-                            CheckIn.week_number == current_week
+                            CheckIn.week == current_week
                         )
                     )
                     check_in = result.scalar_one_or_none()

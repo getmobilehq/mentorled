@@ -84,6 +84,8 @@ export default function RiskDashboardPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedAction, setSelectedAction] = useState<string>('');
   const [recordingAction, setRecordingAction] = useState(false);
+  const [assessing, setAssessing] = useState(false);
+  const [assessResult, setAssessResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCohorts();
@@ -147,6 +149,25 @@ export default function RiskDashboardPage() {
     }
   };
 
+  const handleAssessAll = async () => {
+    if (!selectedCohortId) return;
+    setAssessing(true);
+    setAssessResult(null);
+    try {
+      const res = await riskAPI.assessBulk(selectedCohortId, currentWeek);
+      const data = res.data;
+      setAssessResult(
+        `Assessed ${data.assessed} fellows: ${data.summary.on_track} on track, ${data.summary.monitor} monitor, ${data.summary.at_risk} at risk, ${data.summary.critical} critical${data.errors > 0 ? ` (${data.errors} errors)` : ''}`
+      );
+      await fetchDashboard();
+    } catch (error) {
+      console.error('Error assessing all:', error);
+      setAssessResult('Bulk assessment failed. Check console for details.');
+    } finally {
+      setAssessing(false);
+    }
+  };
+
   const filteredFellows = useMemo(() => {
     if (!dashboardData) return [];
     const sorted = [...dashboardData.fellows].sort((a, b) => a.risk_score - b.risk_score);
@@ -202,10 +223,23 @@ export default function RiskDashboardPage() {
               onChange={(e) => setCurrentWeek(parseInt(e.target.value) || 1)}
             />
           </div>
-          <Button onClick={fetchDashboard} size="sm">
+          <Button onClick={fetchDashboard} size="sm" variant="secondary">
             <Zap className="mr-1 h-4 w-4" /> Refresh
           </Button>
+          <Button onClick={handleAssessAll} size="sm" disabled={assessing || !selectedCohortId}>
+            {assessing ? (
+              <><Activity className="mr-1 h-4 w-4 animate-spin" /> Assessing...</>
+            ) : (
+              <><Target className="mr-1 h-4 w-4" /> Assess All</>
+            )}
+          </Button>
         </div>
+
+        {assessResult && (
+          <div className={`rounded-lg border p-3 text-sm ${assessResult.includes('failed') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
+            {assessResult}
+          </div>
+        )}
 
         {dashboardData && (
           <>

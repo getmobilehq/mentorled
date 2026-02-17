@@ -217,6 +217,8 @@ export const riskAPI = {
     api.post(`/api/risk/action/${assessmentId}`, { action }),
   getByWeek: (week: number, cohortId?: string) =>
     api.get(`/api/risk/week/${week}`, { params: { cohort_id: cohortId } }),
+  assessBulk: (cohortId: string, week: number) =>
+    api.post(`/api/risk/assess-bulk?cohort_id=${cohortId}&week=${week}`),
 };
 
 export const warningsAPI = {

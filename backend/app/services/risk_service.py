@@ -386,6 +386,84 @@ class RiskDetectionService:
         else:
             return "continue_monitoring"
 
+    # --- Bulk Assessment ---
+
+    async def assess_cohort_bulk(self, cohort_id: UUID, week: int) -> Dict[str, Any]:
+        """Assess all active fellows in a cohort. Returns summary + per-fellow results."""
+        result = await self.db.execute(
+            select(Fellow)
+            .options(selectinload(Fellow.applicant))
+            .filter(Fellow.cohort_id == cohort_id)
+        )
+        fellows = result.scalars().all()
+
+        results = []
+        errors = []
+
+        for fellow in fellows:
+            try:
+                assessment_data = await self.assess_fellow_risk(fellow.id, week)
+
+                # Upsert risk assessment record
+                existing = await self.db.execute(
+                    select(RiskAssessment).filter(
+                        RiskAssessment.fellow_id == fellow.id,
+                        RiskAssessment.week == week,
+                    )
+                )
+                existing_assessment = existing.scalar_one_or_none()
+
+                if existing_assessment:
+                    existing_assessment.risk_level = assessment_data["risk_level"]
+                    existing_assessment.risk_score = assessment_data["risk_score"]
+                    existing_assessment.signals = assessment_data["signals"]
+                    existing_assessment.concerns = assessment_data["concerns"]
+                    existing_assessment.recommended_action = assessment_data["recommended_action"]
+                    existing_assessment.assessed_at = datetime.utcnow()
+                else:
+                    new_assessment = RiskAssessment(
+                        fellow_id=fellow.id,
+                        week=week,
+                        risk_level=assessment_data["risk_level"],
+                        risk_score=assessment_data["risk_score"],
+                        signals=assessment_data["signals"],
+                        concerns=assessment_data["concerns"],
+                        recommended_action=assessment_data["recommended_action"],
+                    )
+                    self.db.add(new_assessment)
+
+                # Update fellow's current risk
+                fellow.current_risk_score = assessment_data["risk_score"]
+
+                name = fellow.applicant.name if fellow.applicant else "Unknown"
+                results.append({
+                    "fellow_id": str(fellow.id),
+                    "name": name,
+                    "risk_level": assessment_data["risk_level"],
+                    "risk_score": assessment_data["risk_score"],
+                })
+            except Exception as e:
+                errors.append({
+                    "fellow_id": str(fellow.id),
+                    "error": str(e),
+                })
+
+        await self.db.commit()
+
+        summary = {"on_track": 0, "monitor": 0, "at_risk": 0, "critical": 0}
+        for r in results:
+            level = r["risk_level"]
+            if level in summary:
+                summary[level] += 1
+
+        return {
+            "assessed": len(results),
+            "errors": len(errors),
+            "summary": summary,
+            "results": results,
+            "error_details": errors,
+        }
+
     # --- Dashboard ---
 
     async def get_cohort_risk_dashboard(self, cohort_id: UUID, week: int) -> Dict[str, Any]:
