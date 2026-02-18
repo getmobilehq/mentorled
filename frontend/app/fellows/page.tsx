@@ -37,6 +37,17 @@ export default function FellowsPage() {
   // Teams lookup
   const [teams, setTeams] = useState<Team[]>([]);
 
+  // Milestone modal
+  const [milestoneModalOpen, setMilestoneModalOpen] = useState(false);
+  const [milestoneFellow, setMilestoneFellow] = useState<Fellow | null>(null);
+  const [milestoneForm, setMilestoneForm] = useState({
+    milestone_1_score: '',
+    milestone_2_score: '',
+    milestone_3_score: '',
+    final_score: '',
+  });
+  const [savingMilestones, setSavingMilestones] = useState(false);
+
   // Detail modal
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailFellow, setDetailFellow] = useState<Fellow | null>(null);
@@ -117,6 +128,38 @@ export default function FellowsPage() {
       console.error('Error fetching fellow details:', error);
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const handleOpenMilestones = (fellow: Fellow, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setMilestoneFellow(fellow);
+    setMilestoneForm({
+      milestone_1_score: fellow.milestone_1_score?.toString() || '',
+      milestone_2_score: fellow.milestone_2_score?.toString() || '',
+      milestone_3_score: fellow.milestone_3_score?.toString() || '',
+      final_score: fellow.final_score?.toString() || '',
+    });
+    setMilestoneModalOpen(true);
+  };
+
+  const handleSaveMilestones = async () => {
+    if (!milestoneFellow) return;
+    setSavingMilestones(true);
+    try {
+      const data: Record<string, number> = {};
+      if (milestoneForm.milestone_1_score) data.milestone_1_score = parseFloat(milestoneForm.milestone_1_score);
+      if (milestoneForm.milestone_2_score) data.milestone_2_score = parseFloat(milestoneForm.milestone_2_score);
+      if (milestoneForm.milestone_3_score) data.milestone_3_score = parseFloat(milestoneForm.milestone_3_score);
+      if (milestoneForm.final_score) data.final_score = parseFloat(milestoneForm.final_score);
+      await fellowsAPI.updateMilestones(milestoneFellow.id, data);
+      setMilestoneModalOpen(false);
+      await fetchFellows();
+    } catch (error) {
+      console.error('Error saving milestones:', error);
+      alert('Failed to save milestones.');
+    } finally {
+      setSavingMilestones(false);
     }
   };
 
@@ -322,8 +365,10 @@ export default function FellowsPage() {
                     <TableHead>Status</TableHead>
                     <TableHead>Risk Level</TableHead>
                     <TableHead>Warnings</TableHead>
-                    <TableHead>Milestone 1</TableHead>
-                    <TableHead>Milestone 2</TableHead>
+                    <TableHead>M1</TableHead>
+                    <TableHead>M2</TableHead>
+                    <TableHead>M3</TableHead>
+                    <TableHead>Final</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -388,10 +433,31 @@ export default function FellowsPage() {
                           <span className="text-gray-400">-</span>
                         )}
                       </TableCell>
+                      <TableCell>
+                        {fellow.milestone_3_score ? (
+                          <span className={fellow.milestone_3_score >= 70 ? 'text-green-600 font-semibold' : 'text-yellow-600 font-semibold'}>
+                            {fellow.milestone_3_score}%
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {fellow.final_score != null ? (
+                          <span className={fellow.final_score >= 2.5 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                            {fellow.final_score.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" variant="ghost" onClick={() => handleViewDetail(fellow)}>
                             <Eye className="mr-1 h-4 w-4" /> View
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={(e) => handleOpenMilestones(fellow, e)}>
+                            <TrendingUp className="mr-1 h-4 w-4" /> Milestones
                           </Button>
                           <Button
                             size="sm"
@@ -495,6 +561,50 @@ export default function FellowsPage() {
           )}
         </Modal>
 
+        {/* Milestone Recording Modal */}
+        <Modal
+          open={milestoneModalOpen}
+          onOpenChange={setMilestoneModalOpen}
+          title={milestoneFellow ? `Record Milestones - ${milestoneFellow.name}` : 'Record Milestones'}
+        >
+          {milestoneFellow && (
+            <div className="space-y-5">
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="font-medium">{milestoneFellow.name}</p>
+                <p className="text-sm text-gray-600 capitalize">{milestoneFellow.role.replace('_', ' ')}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { key: 'milestone_1_score', label: 'Milestone 1 Score (%)' },
+                  { key: 'milestone_2_score', label: 'Milestone 2 Score (%)' },
+                  { key: 'milestone_3_score', label: 'Milestone 3 Score (%)' },
+                  { key: 'final_score', label: 'Final Score (0-5)' },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max={key === 'final_score' ? 5 : 100}
+                      value={(milestoneForm as any)[key]}
+                      onChange={(e) => setMilestoneForm(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      placeholder={key === 'final_score' ? '0.0 - 5.0' : '0 - 100'}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button variant="secondary" onClick={() => setMilestoneModalOpen(false)}>Cancel</Button>
+                <Button variant="primary" onClick={handleSaveMilestones} disabled={savingMilestones}>
+                  {savingMilestones ? 'Saving...' : 'Save Milestones'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
         {/* Fellow Detail Modal */}
         <Modal
           open={detailModalOpen}
@@ -523,20 +633,26 @@ export default function FellowsPage() {
 
               {/* Milestone Scores */}
               <div>
-                <h4 className="font-medium text-gray-900 mb-3">Milestone Progress</h4>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-sm text-gray-600">Milestone 1</p>
-                    <p className={`text-2xl font-bold ${detailFellow.milestone_1_score ? (detailFellow.milestone_1_score >= 70 ? 'text-green-600' : 'text-yellow-600') : 'text-gray-400'}`}>
-                      {detailFellow.milestone_1_score ? `${detailFellow.milestone_1_score}%` : '-'}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border p-3 text-center">
-                    <p className="text-sm text-gray-600">Milestone 2</p>
-                    <p className={`text-2xl font-bold ${detailFellow.milestone_2_score ? (detailFellow.milestone_2_score >= 70 ? 'text-green-600' : 'text-yellow-600') : 'text-gray-400'}`}>
-                      {detailFellow.milestone_2_score ? `${detailFellow.milestone_2_score}%` : '-'}
-                    </p>
-                  </div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-900">Milestone Progress</h4>
+                  <Button size="sm" variant="secondary" onClick={() => handleOpenMilestones(detailFellow)}>
+                    <TrendingUp className="mr-1 h-3 w-3" /> Record Milestones
+                  </Button>
+                </div>
+                <div className="grid grid-cols-5 gap-3">
+                  {[
+                    { label: 'M1', value: detailFellow.milestone_1_score, pct: true },
+                    { label: 'M2', value: detailFellow.milestone_2_score, pct: true },
+                    { label: 'M3', value: detailFellow.milestone_3_score, pct: true },
+                    { label: 'Final', value: detailFellow.final_score, pct: false },
+                  ].map(({ label, value, pct }) => (
+                    <div key={label} className="rounded-lg border p-3 text-center">
+                      <p className="text-sm text-gray-600">{label}</p>
+                      <p className={`text-2xl font-bold ${value != null ? (pct ? (value >= 70 ? 'text-green-600' : 'text-yellow-600') : (value >= 2.5 ? 'text-green-600' : 'text-red-600')) : 'text-gray-400'}`}>
+                        {value != null ? (pct ? `${value}%` : value.toFixed(1)) : '-'}
+                      </p>
+                    </div>
+                  ))}
                   <div className="rounded-lg border p-3 text-center">
                     <p className="text-sm text-gray-600">Warnings</p>
                     <p className={`text-2xl font-bold ${detailFellow.warnings_count && detailFellow.warnings_count > 0 ? 'text-red-600' : 'text-gray-400'}`}>

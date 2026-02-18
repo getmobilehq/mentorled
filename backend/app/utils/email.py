@@ -312,5 +312,27 @@ class EmailService:
         )
 
 
+    async def send_check_in_reminder(
+        self,
+        fellow_email: str,
+        fellow_name: str,
+        current_week: int,
+        cohort_name: str,
+    ) -> bool:
+        """Send reminder for missing weekly check-in."""
+        subject = f"MentorLed: Week {current_week} Check-in Reminder"
+        context = {
+            "fellow_name": fellow_name,
+            "current_week": current_week,
+            "cohort_name": cohort_name,
+        }
+        return await self.send_email(
+            to_email=fellow_email,
+            subject=subject,
+            template_name="check_in_reminder.html",
+            context=context,
+        )
+
+
 # Global email service instance
 email_service = EmailService()

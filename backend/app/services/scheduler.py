@@ -189,7 +189,7 @@ class SchedulerService:
     async def check_missing_checkins(self):
         """
         Daily task: Check for fellows who haven't submitted check-ins.
-        Send reminders for overdue check-ins.
+        Send reminder emails for overdue check-ins.
         """
         logger.info("Checking for missing check-ins...")
 
@@ -197,21 +197,18 @@ class SchedulerService:
             try:
                 from sqlalchemy.orm import selectinload
 
-                # Get active fellows with their cohort to calculate current week
+                # Get active fellows with applicant and cohort
                 result = await db.execute(
                     select(Fellow)
-                    .options(selectinload(Fellow.applicant))
+                    .options(selectinload(Fellow.applicant), selectinload(Fellow.cohort))
                     .where(Fellow.status == 'active')
                 )
                 fellows = result.scalars().all()
 
                 missing_count = 0
+                reminded_count = 0
                 for fellow in fellows:
-                    # Get cohort to calculate program week
-                    cohort_result = await db.execute(
-                        select(Cohort).where(Cohort.id == fellow.cohort_id)
-                    )
-                    cohort = cohort_result.scalar_one_or_none()
+                    cohort = fellow.cohort
                     if not cohort:
                         continue
 
@@ -230,9 +227,21 @@ class SchedulerService:
                     if not check_in:
                         missing_count += 1
                         logger.info(f"Fellow {fellow.id} missing check-in for week {current_week}")
-                        # TODO: Send reminder email
 
-                logger.info(f"Found {missing_count} fellows with missing check-ins")
+                        # Send reminder email
+                        if fellow.applicant and fellow.applicant.email:
+                            try:
+                                await email_service.send_check_in_reminder(
+                                    fellow_email=fellow.applicant.email,
+                                    fellow_name=fellow.applicant.name or "Fellow",
+                                    current_week=current_week,
+                                    cohort_name=cohort.name,
+                                )
+                                reminded_count += 1
+                            except Exception as e:
+                                logger.error(f"Failed to send check-in reminder to {fellow.applicant.email}: {e}")
+
+                logger.info(f"Found {missing_count} fellows with missing check-ins, sent {reminded_count} reminders")
 
             except Exception as e:
                 logger.error(f"Error in check_missing_checkins: {str(e)}")
@@ -312,40 +321,133 @@ class SchedulerService:
 
     async def weekly_analytics_report(self):
         """
-        Weekly task: Generate analytics report for program metrics.
+        Weekly task: Generate analytics report and send via Slack.
         """
         logger.info("Generating weekly analytics report...")
 
         async with AsyncSessionLocal() as db:
             try:
-                # Collect metrics
-                applicants_result = await db.execute(select(Applicant))
-                fellows_result = await db.execute(select(Fellow))
+                from sqlalchemy import func
+                from app.models.risk_assessment import RiskAssessment
+                from app.models.warning import Warning
+                from app.utils.slack import slack_notifier
 
-                total_applicants = len(list(applicants_result.scalars().all()))
-                total_fellows = len(list(fellows_result.scalars().all()))
+                # Count new applicants in last 7 days
+                week_ago = datetime.utcnow() - timedelta(days=7)
+                new_applicants_result = await db.execute(
+                    select(func.count()).select_from(Applicant).where(
+                        Applicant.created_at >= week_ago
+                    )
+                )
+                new_applicants = new_applicants_result.scalar() or 0
 
-                logger.info(f"Weekly Report: {total_applicants} applicants, {total_fellows} fellows")
-                # TODO: Send report email to program team
+                # Count evaluations in last 7 days
+                from app.models.evaluation import ApplicationEvaluation
+                evals_result = await db.execute(
+                    select(func.count()).select_from(ApplicationEvaluation).where(
+                        ApplicationEvaluation.created_at >= week_ago
+                    )
+                )
+                evaluations_completed = evals_result.scalar() or 0
+
+                # Count high-risk fellows (at_risk or critical)
+                high_risk_result = await db.execute(
+                    select(func.count()).select_from(Fellow).where(
+                        Fellow.current_risk_level.in_(["at_risk", "critical"])
+                    )
+                )
+                high_risk_fellows = high_risk_result.scalar() or 0
+
+                # Count warnings issued in last 7 days
+                warnings_result = await db.execute(
+                    select(func.count()).select_from(Warning).where(
+                        Warning.issued_at >= week_ago,
+                        Warning.issued_at.isnot(None),
+                    )
+                )
+                warnings_issued = warnings_result.scalar() or 0
+
+                # Get AI cost for last 7 days
+                from app.models.audit_log import AuditLog
+                cost_result = await db.execute(
+                    select(func.coalesce(func.sum(AuditLog.ai_cost_usd), 0)).where(
+                        AuditLog.timestamp >= week_ago
+                    )
+                )
+                ai_cost = float(cost_result.scalar() or 0)
+
+                logger.info(
+                    f"Weekly Report: {new_applicants} new applicants, "
+                    f"{evaluations_completed} evaluations, {high_risk_fellows} high-risk, "
+                    f"{warnings_issued} warnings, ${ai_cost:.2f} AI cost"
+                )
+
+                # Send via Slack
+                await slack_notifier.notify_daily_summary(
+                    new_applicants=new_applicants,
+                    evaluations_completed=evaluations_completed,
+                    high_risk_fellows=high_risk_fellows,
+                    warnings_issued=warnings_issued,
+                    ai_cost=ai_cost,
+                )
 
             except Exception as e:
                 logger.error(f"Error in weekly_analytics_report: {str(e)}")
 
     async def weekly_cost_report(self):
         """
-        Weekly task: Generate AI cost report.
+        Weekly task: Generate AI cost report and send via Slack.
         """
         logger.info("Generating weekly cost report...")
 
-        try:
-            # TODO: Query audit log for AI usage
-            # TODO: Calculate total costs
-            # TODO: Send report to admin team
+        async with AsyncSessionLocal() as db:
+            try:
+                from sqlalchemy import func
+                from app.models.audit_log import AuditLog
+                from app.utils.slack import slack_notifier
 
-            logger.info("Weekly cost report generated")
+                week_ago = datetime.utcnow() - timedelta(days=7)
 
-        except Exception as e:
-            logger.error(f"Error in weekly_cost_report: {str(e)}")
+                # Total cost
+                cost_result = await db.execute(
+                    select(func.coalesce(func.sum(AuditLog.ai_cost_usd), 0)).where(
+                        AuditLog.timestamp >= week_ago
+                    )
+                )
+                total_cost = float(cost_result.scalar() or 0)
+
+                # Total API calls
+                calls_result = await db.execute(
+                    select(func.count()).select_from(AuditLog).where(
+                        AuditLog.timestamp >= week_ago,
+                        AuditLog.actor_type == 'ai_agent',
+                    )
+                )
+                total_calls = calls_result.scalar() or 0
+
+                # Total tokens
+                tokens_result = await db.execute(
+                    select(
+                        func.coalesce(func.sum(AuditLog.ai_prompt_tokens), 0),
+                        func.coalesce(func.sum(AuditLog.ai_completion_tokens), 0),
+                    ).where(AuditLog.timestamp >= week_ago)
+                )
+                row = tokens_result.one()
+                prompt_tokens = int(row[0])
+                completion_tokens = int(row[1])
+
+                logger.info(
+                    f"Weekly Cost Report: ${total_cost:.4f}, "
+                    f"{total_calls} API calls, {prompt_tokens + completion_tokens} tokens"
+                )
+
+                # Send Slack summary
+                await slack_notifier.send_message(
+                    text=f"Weekly AI Cost Report: ${total_cost:.2f} ({total_calls} calls, {prompt_tokens + completion_tokens} tokens)"
+                )
+
+            except Exception as e:
+                logger.error(f"Error in weekly_cost_report: {str(e)}")
 
 
 # Global scheduler instance

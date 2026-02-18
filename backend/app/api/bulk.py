@@ -18,6 +18,8 @@ from app.models.fellow import Fellow
 from app.models.evaluation import ApplicationEvaluation
 from app.agents.screening_agent import screening_agent
 from app.agents.delivery_agent import DeliveryAgent
+from app.utils.slack import slack_notifier
+from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix="/bulk")
 
@@ -116,6 +118,7 @@ async def _evaluate_applicant(applicant_id: UUID, auto_process: bool = False):
 @router.post("/status/update")
 async def bulk_update_status(
     request: BulkStatusUpdateRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """Bulk update applicant status"""
@@ -128,6 +131,16 @@ async def bulk_update_status(
         applicant.status = request.new_status
 
     await db.commit()
+
+    # Send Slack notification for accepted applicants
+    if request.new_status == "accepted":
+        for applicant in applicants:
+            background_tasks.add_task(
+                slack_notifier.notify_applicant_accepted,
+                applicant_name=applicant.name,
+                role=applicant.role or "Unknown",
+                score=0.0,
+            )
 
     return {
         "message": f"Updated status for {len(applicants)} applicants",
@@ -243,8 +256,8 @@ async def export_fellows_csv(
     cohort_id: UUID = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Export fellows to CSV"""
-    query = select(Fellow)
+    """Export fellows to CSV with name/email from applicant."""
+    query = select(Fellow).options(selectinload(Fellow.applicant))
 
     if cohort_id:
         query = query.where(Fellow.cohort_id == cohort_id)
@@ -257,6 +270,8 @@ async def export_fellows_csv(
     for fellow in fellows:
         data.append({
             'id': str(fellow.id),
+            'name': fellow.applicant.name if fellow.applicant else '',
+            'email': fellow.applicant.email if fellow.applicant else '',
             'applicant_id': str(fellow.applicant_id),
             'cohort_id': str(fellow.cohort_id),
             'role': fellow.role,

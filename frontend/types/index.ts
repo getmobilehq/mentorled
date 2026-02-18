@@ -82,8 +82,11 @@ export interface Fellow {
   linkedin_url?: string;
   milestone_1_score?: number;
   milestone_2_score?: number;
+  milestone_3_score?: number;
+  final_score?: number;
   current_risk_level?: RiskLevel;
   warnings_count?: number;
+  mentor_flags?: number;
   created_at: string;
   updated_at: string;
 }

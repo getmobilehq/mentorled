@@ -1,14 +1,16 @@
 """Warning Workflow API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from sqlalchemy.orm import selectinload
 from typing import List
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 
 from app.database import get_db
 from app.models.warning import Warning
 from app.models.fellow import Fellow
+from app.models.cohort import Cohort
 from app.models.check_in import CheckIn
 from app.models.risk_assessment import RiskAssessment
 from app.models.user import User, UserRole
@@ -24,6 +26,8 @@ from app.schemas.warning import (
 )
 from app.middleware.auth import get_current_user, require_role
 from app.agents.warning_drafter import WarningDrafter
+from app.utils.email import EmailService
+from app.utils.slack import slack_notifier
 
 router = APIRouter(prefix="/warnings")
 
@@ -37,9 +41,11 @@ async def draft_warning(
     """
     Generate AI draft of a warning message.
     """
-    # Get fellow and related data
+    # Get fellow with applicant and cohort
     result = await db.execute(
-        select(Fellow).filter(Fellow.id == request.fellow_id)
+        select(Fellow)
+        .options(selectinload(Fellow.applicant), selectinload(Fellow.cohort))
+        .filter(Fellow.id == request.fellow_id)
     )
     fellow = result.scalar_one_or_none()
     if not fellow:
@@ -77,11 +83,17 @@ async def draft_warning(
         )
         previous_warning = result.scalar_one_or_none()
 
+    # Calculate current week from cohort start_date
+    current_week = 'Unknown'
+    if fellow.cohort and fellow.cohort.start_date:
+        days_since_start = (date.today() - fellow.cohort.start_date).days
+        current_week = str(max(1, (days_since_start // 7) + 1))
+
     # Prepare data for AI drafter
     warning_data = {
         'fellow_name': fellow.applicant.name if fellow.applicant else 'Unknown',
         'role': fellow.role,
-        'current_week': 'Unknown',  # TODO: Calculate from cohort
+        'current_week': current_week,
         'warnings_count': fellow.warnings_count,
         'level': request.level,
         'concerns': request.concerns,
@@ -222,6 +234,7 @@ async def update_warning(
 async def issue_warning(
     warning_id: UUID,
     request: WarningIssueRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.ADMIN))
 ):
@@ -247,7 +260,9 @@ async def issue_warning(
         warning.final_message = warning.draft_message
 
     # Update fellow's warning count
-    result = await db.execute(select(Fellow).filter(Fellow.id == warning.fellow_id))
+    result = await db.execute(
+        select(Fellow).options(selectinload(Fellow.applicant)).filter(Fellow.id == warning.fellow_id)
+    )
     fellow = result.scalar_one_or_none()
     if fellow:
         fellow.warnings_count += 1
@@ -255,7 +270,39 @@ async def issue_warning(
     await db.commit()
     await db.refresh(warning)
 
-    # TODO: Send email if request.send_email is True
+    # Send email notification
+    if request.send_email and fellow and fellow.applicant:
+        fellow_name = fellow.applicant.name or "Fellow"
+        fellow_email = fellow.applicant.email
+
+        async def send_warning_email():
+            email_service = EmailService()
+            await email_service.send_fellow_warning(
+                fellow_email=fellow_email,
+                fellow_name=fellow_name,
+                warning_number=fellow.warnings_count,
+                message=warning.final_message or warning.draft_message or "",
+                risk_level=fellow.current_risk_level,
+                required_actions=warning.requirements,
+                consequences="Failure to meet requirements may result in removal from the program."
+                if warning.level == "final" else None,
+            )
+
+        background_tasks.add_task(send_warning_email)
+
+    # Send Slack notification
+    if fellow and fellow.applicant:
+        fellow_name = fellow.applicant.name or "Unknown"
+
+        async def send_slack_notification():
+            await slack_notifier.notify_warning_issued(
+                fellow_name=fellow_name,
+                warning_number=fellow.warnings_count,
+                message=warning.final_message or warning.draft_message or "",
+                risk_level=fellow.current_risk_level or "unknown",
+            )
+
+        background_tasks.add_task(send_slack_notification)
 
     return warning
 

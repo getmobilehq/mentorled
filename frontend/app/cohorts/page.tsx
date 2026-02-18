@@ -14,6 +14,7 @@ import {
   TrendingUp,
   ArrowRight,
   Pencil,
+  GraduationCap,
 } from 'lucide-react';
 import type { Cohort, Applicant, Fellow } from '@/types';
 
@@ -37,6 +38,16 @@ export default function CohortsPage() {
   const [loading, setLoading] = useState(true);
   const [applicantCounts, setApplicantCounts] = useState<Record<string, number>>({});
   const [fellowCounts, setFellowCounts] = useState<Record<string, number>>({});
+
+  // Graduate modal
+  const [graduateModalOpen, setGraduateModalOpen] = useState(false);
+  const [graduatingCohort, setGraduatingCohort] = useState<Cohort | null>(null);
+  const [graduating, setGraduating] = useState(false);
+  const [graduateThresholds, setGraduateThresholds] = useState({
+    distinction_threshold: 3.5,
+    pass_threshold: 2.5,
+  });
+  const [graduateResult, setGraduateResult] = useState<any>(null);
 
   // Create/Edit modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -124,6 +135,21 @@ export default function CohortsPage() {
     } catch (error: any) {
       const detail = error.response?.data?.detail;
       alert(detail || 'Failed to update status.');
+    }
+  };
+
+  const handleGraduate = async () => {
+    if (!graduatingCohort) return;
+    setGraduating(true);
+    try {
+      const res = await cohortsAPI.graduate(graduatingCohort.id, graduateThresholds);
+      setGraduateResult(res.data);
+      await fetchData();
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      alert(detail || 'Failed to graduate cohort.');
+    } finally {
+      setGraduating(false);
     }
   };
 
@@ -244,16 +270,33 @@ export default function CohortsPage() {
                       </div>
 
                       {/* Actions */}
-                      {transition && (
-                        <div className="pt-3 border-t border-gray-100">
-                          <Button
-                            size="sm"
-                            variant="primary"
-                            onClick={() => handleStatusChange(cohort.id, transition.next)}
-                          >
-                            <ArrowRight className="mr-1 h-3 w-3" />
-                            {transition.label}
-                          </Button>
+                      {(transition || cohort.status === 'active') && (
+                        <div className="pt-3 border-t border-gray-100 flex gap-2">
+                          {cohort.status === 'active' && (
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              onClick={() => {
+                                setGraduatingCohort(cohort);
+                                setGraduateResult(null);
+                                setGraduateThresholds({ distinction_threshold: 3.5, pass_threshold: 2.5 });
+                                setGraduateModalOpen(true);
+                              }}
+                            >
+                              <GraduationCap className="mr-1 h-3 w-3" />
+                              Graduate
+                            </Button>
+                          )}
+                          {transition && cohort.status !== 'active' && (
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              onClick={() => handleStatusChange(cohort.id, transition.next)}
+                            >
+                              <ArrowRight className="mr-1 h-3 w-3" />
+                              {transition.label}
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -262,6 +305,88 @@ export default function CohortsPage() {
               })}
             </div>
           )}
+
+          {/* Graduate Modal */}
+          <Modal
+            open={graduateModalOpen}
+            onOpenChange={setGraduateModalOpen}
+            title={graduatingCohort ? `Graduate - ${graduatingCohort.name}` : 'Graduate Cohort'}
+          >
+            {graduatingCohort && (
+              <div className="space-y-5">
+                {graduateResult ? (
+                  <div className="space-y-4">
+                    <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center">
+                      <GraduationCap className="mx-auto h-8 w-8 text-green-600 mb-2" />
+                      <p className="text-lg font-semibold text-green-900">{graduateResult.message}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-lg border p-3 text-center">
+                        <p className="text-sm text-gray-600">Graduated</p>
+                        <p className="text-2xl font-bold text-green-600">{graduateResult.graduated}</p>
+                      </div>
+                      <div className="rounded-lg border p-3 text-center">
+                        <p className="text-sm text-gray-600">Distinction</p>
+                        <p className="text-2xl font-bold text-blue-600">{graduateResult.graduated_with_distinction}</p>
+                      </div>
+                      <div className="rounded-lg border p-3 text-center">
+                        <p className="text-sm text-gray-600">Did Not Graduate</p>
+                        <p className="text-2xl font-bold text-red-600">{graduateResult.did_not_graduate}</p>
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-4 border-t">
+                      <Button variant="primary" onClick={() => setGraduateModalOpen(false)}>Done</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                      This will grade all active fellows based on their final scores and transition the cohort to completed.
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Distinction Threshold</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="5"
+                          value={graduateThresholds.distinction_threshold}
+                          onChange={(e) => setGraduateThresholds(prev => ({ ...prev, distinction_threshold: parseFloat(e.target.value) || 0 }))}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Final score &ge; this = Distinction</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Pass Threshold</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="5"
+                          value={graduateThresholds.pass_threshold}
+                          onChange={(e) => setGraduateThresholds(prev => ({ ...prev, pass_threshold: parseFloat(e.target.value) || 0 }))}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Final score &ge; this = Pass</p>
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3">
+                      <p className="text-sm text-yellow-800">
+                        <strong>Warning:</strong> This action cannot be undone. Fellows with scores below the pass threshold will be marked as did not graduate.
+                      </p>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-4 border-t">
+                      <Button variant="secondary" onClick={() => setGraduateModalOpen(false)}>Cancel</Button>
+                      <Button variant="primary" onClick={handleGraduate} disabled={graduating}>
+                        {graduating ? 'Graduating...' : 'Graduate Cohort'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Modal>
 
           {/* Create/Edit Modal */}
           <Modal

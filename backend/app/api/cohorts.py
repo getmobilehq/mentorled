@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
 
 from app.database import get_db
 from app.models.cohort import Cohort, CohortStatus
+from app.models.fellow import Fellow, FellowStatus
 from pydantic import BaseModel
 from datetime import date
 
@@ -121,3 +123,80 @@ async def update_cohort_status(
     await db.commit()
     await db.refresh(cohort)
     return cohort
+
+
+class GraduateRequest(BaseModel):
+    distinction_threshold: float = 3.5
+    pass_threshold: float = 2.5
+
+
+@router.post("/{cohort_id}/graduate")
+async def graduate_cohort(
+    cohort_id: UUID,
+    request: GraduateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Graduate all fellows in a cohort based on final_score thresholds.
+    - final_score >= distinction_threshold → GRADUATED_DISTINCTION
+    - final_score >= pass_threshold → GRADUATED
+    - final_score < pass_threshold or None → DID_NOT_GRADUATE
+    Also transitions cohort to COMPLETED status.
+    """
+    result = await db.execute(select(Cohort).where(Cohort.id == cohort_id))
+    cohort = result.scalar_one_or_none()
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+
+    current = cohort.status
+    if isinstance(current, CohortStatus):
+        current = current.value
+    if current != "active":
+        raise HTTPException(status_code=400, detail="Can only graduate an active cohort")
+
+    # Get all active fellows in cohort
+    fellows_result = await db.execute(
+        select(Fellow)
+        .options(selectinload(Fellow.applicant))
+        .where(
+            Fellow.cohort_id == cohort_id,
+            Fellow.status.in_([
+                FellowStatus.ACTIVE,
+                FellowStatus.ON_TRACK,
+                FellowStatus.MONITOR,
+                FellowStatus.AT_RISK,
+                FellowStatus.WARNING,
+                FellowStatus.FINAL_WARNING,
+            ]),
+        )
+    )
+    fellows = fellows_result.scalars().all()
+
+    graduated = 0
+    distinction = 0
+    did_not_graduate = 0
+
+    for fellow in fellows:
+        score = float(fellow.final_score) if fellow.final_score is not None else None
+        if score is not None and score >= request.distinction_threshold:
+            fellow.status = FellowStatus.GRADUATED_DISTINCTION
+            distinction += 1
+        elif score is not None and score >= request.pass_threshold:
+            fellow.status = FellowStatus.GRADUATED
+            graduated += 1
+        else:
+            fellow.status = FellowStatus.DID_NOT_GRADUATE
+            did_not_graduate += 1
+
+    # Transition cohort to completed
+    cohort.status = CohortStatus.COMPLETED
+
+    await db.commit()
+
+    return {
+        "message": f"Graduated {len(fellows)} fellows",
+        "graduated": graduated,
+        "graduated_with_distinction": distinction,
+        "did_not_graduate": did_not_graduate,
+        "cohort_status": "completed",
+    }

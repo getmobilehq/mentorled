@@ -41,6 +41,7 @@ class Fellow(Base):
     milestone_3_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     final_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     warnings_count: Mapped[int] = mapped_column(Integer, default=0)
+    mentor_flags: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     ended_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

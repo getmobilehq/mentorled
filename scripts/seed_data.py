@@ -74,6 +74,42 @@ async def seed_database():
             else:
                 print("ℹ️  Admin user already exists")
 
+            # Seed a viewer/fellow user (linked to Emma Wright fellow)
+            result = await db.execute(select(User).where(User.email == "emma.wright@example.com"))
+            if not result.scalar_one_or_none():
+                fellow_user = User(
+                    email="emma.wright@example.com",
+                    username="emma",
+                    full_name="Emma Wright",
+                    hashed_password=hash_password("fellow123"),
+                    role=UserRole.VIEWER,
+                    is_active=True,
+                    is_verified=True,
+                )
+                db.add(fellow_user)
+                await db.flush()
+                print("✅ Created fellow user (emma.wright@example.com / fellow123)")
+            else:
+                print("ℹ️  Fellow user already exists")
+
+            # Seed a reviewer/mentor user (linked to Sarah Chen mentor)
+            result = await db.execute(select(User).where(User.email == "sarah@example.com"))
+            if not result.scalar_one_or_none():
+                mentor_user = User(
+                    email="sarah@example.com",
+                    username="sarah",
+                    full_name="Sarah Chen",
+                    hashed_password=hash_password("mentor123"),
+                    role=UserRole.REVIEWER,
+                    is_active=True,
+                    is_verified=True,
+                )
+                db.add(mentor_user)
+                await db.flush()
+                print("✅ Created mentor user (sarah@example.com / mentor123)")
+            else:
+                print("ℹ️  Mentor user already exists")
+
             # Create a cohort — set to ACTIVE for fellowship
             cohort = Cohort(
                 name="2025 Spring Cohort",

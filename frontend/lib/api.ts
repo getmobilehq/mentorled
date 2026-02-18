@@ -117,17 +117,25 @@ export const cohortsAPI = {
     api.put(`/api/cohorts/${id}`, data),
   updateStatus: (id: string, status: string) =>
     api.patch(`/api/cohorts/${id}/status`, { status }),
+  graduate: (id: string, thresholds?: { distinction_threshold?: number; pass_threshold?: number }) =>
+    api.post(`/api/cohorts/${id}/graduate`, thresholds || {}),
 };
 
 export const fellowsAPI = {
   list: (cohortId?: string) =>
     api.get('/api/fellows/', { params: { cohort_id: cohortId } }),
+  getMe: () =>
+    api.get('/api/fellows/me'),
   get: (id: string) =>
     api.get(`/api/fellows/${id}`),
   getCheckIns: (id: string) =>
     api.get(`/api/fellows/${id}/check-ins`),
   getRisk: (id: string) =>
     api.get(`/api/fellows/${id}/risk`),
+  update: (id: string, data: any) =>
+    api.patch(`/api/fellows/${id}`, data),
+  updateMilestones: (id: string, data: any) =>
+    api.patch(`/api/fellows/${id}/milestones`, data),
 };
 
 export const deliveryAPI = {
@@ -358,6 +366,15 @@ export const teamsAPI = {
     api.post(`/api/teams/${teamId}/remove-fellow?fellow_id=${fellowId}`),
   getMentors: () =>
     api.get('/api/teams/mentors/list'),
+};
+
+export const mentorsAPI = {
+  getMe: () =>
+    api.get('/api/mentors/me'),
+  getTeamHealth: (teamId: string) =>
+    api.get(`/api/mentors/teams/${teamId}/health`),
+  flagFellow: (fellowId: string) =>
+    api.post(`/api/mentors/fellows/${fellowId}/flag`),
 };
 
 export const sprintsAPI = {

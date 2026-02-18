@@ -12,15 +12,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, isAuthenticated, loading: authLoading } = useAuth();
+  const { login, isAuthenticated, user, loading: authLoading } = useAuth();
   const router = useRouter();
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (!authLoading && isAuthenticated) {
-      router.push('/');
+    if (!authLoading && isAuthenticated && user) {
+      router.push(user.role === 'viewer' ? '/portal' : user.role === 'reviewer' ? '/mentor' : '/');
     }
-  }, [isAuthenticated, authLoading, router]);
+  }, [isAuthenticated, authLoading, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

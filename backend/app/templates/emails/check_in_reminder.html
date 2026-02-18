@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Weekly Check-in Reminder</h1>
+
+<p>Dear {{ fellow_name }},</p>
+
+<p>This is a reminder that your weekly check-in for <strong>Week {{ current_week }}</strong> has not been submitted yet.</p>
+
+<div class="highlight">
+    <h2 style="margin-top: 0;">Week {{ current_week }} Check-in</h2>
+    <p>
+        <strong>Program:</strong> {{ cohort_name }}
+    </p>
+    <p>
+        Your weekly check-in helps us track your progress and provide the right support.
+        It only takes a few minutes to complete.
+    </p>
+</div>
+
+<p>Please submit your check-in as soon as possible. Your check-in should include:</p>
+<ul>
+    <li>What you accomplished this week</li>
+    <li>What you plan to focus on next week</li>
+    <li>Any blockers or areas where you need help</li>
+    <li>Your self-assessment and energy level</li>
+</ul>
+
+<p>
+    Best regards,<br>
+    The MentorLed Team
+</p>
+{% endblock %}

@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   LayoutDashboard,
   Users,
@@ -22,6 +23,9 @@ import {
   Mail,
   Repeat,
   UserCheck,
+  Home,
+  CheckSquare,
+  Clock,
 } from 'lucide-react';
 
 interface NavItem {
@@ -30,7 +34,7 @@ interface NavItem {
   icon: React.ElementType;
 }
 
-const navigation: NavItem[] = [
+const adminNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Cohorts', href: '/cohorts', icon: Calendar },
   { name: 'Screening', href: '/screening', icon: ClipboardCheck },
@@ -50,12 +54,25 @@ const navigation: NavItem[] = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
+const portalNavigation: NavItem[] = [
+  { name: 'My Portal', href: '/portal', icon: Home },
+  { name: 'Settings', href: '/settings', icon: Settings },
+];
+
+const mentorNavigation: NavItem[] = [
+  { name: 'My Teams', href: '/mentor', icon: UserCheck },
+  { name: 'Settings', href: '/settings', icon: Settings },
+];
+
 export const Sidebar: React.FC = () => {
   const pathname = usePathname();
+  const { user } = useAuth();
+
+  const navigation = user?.role === 'viewer' ? portalNavigation : user?.role === 'reviewer' ? mentorNavigation : adminNavigation;
 
   const isActive = (href: string) => {
-    if (href === '/') {
-      return pathname === '/';
+    if (href === '/' || href === '/portal') {
+      return pathname === href;
     }
     return pathname.startsWith(href);
   };
