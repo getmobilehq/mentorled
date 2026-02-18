@@ -5,7 +5,9 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
+import { useToast } from '@/components/ui/Toast';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { checkInsAPI, fellowsAPI, cohortsAPI } from '@/lib/api';
 import {
@@ -27,6 +29,7 @@ import type {
 } from '@/types';
 
 export default function CheckInsPage() {
+  const { toast, confirm } = useToast();
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [fellows, setFellows] = useState<{ [key: string]: Fellow }>({});
   const [loading, setLoading] = useState(true);
@@ -110,28 +113,29 @@ export default function CheckInsPage() {
       await fetchCheckIns();
     } catch (error) {
       console.error('Error analyzing check-in:', error);
-      alert('Failed to analyze check-in. Please try again.');
+      toast('Failed to analyze check-in. Please try again.', 'error');
     } finally {
       setAnalyzing(null);
     }
   };
 
   const handleBulkAnalyze = async () => {
-    if (!confirm(`Analyze all ${stats.pending} pending check-ins? This may take a while.`)) return;
-    setBulkAnalyzing(true);
-    try {
-      const response = await checkInsAPI.analyzeBulk(
-        weekFilter || undefined,
-        selectedCohortId || undefined
-      );
-      alert(`Analyzed ${response.data.analyzed} check-ins.${response.data.errors > 0 ? ` ${response.data.errors} errors.` : ''}`);
-      await fetchCheckIns();
-    } catch (error) {
-      console.error('Error bulk analyzing:', error);
-      alert('Bulk analysis failed.');
-    } finally {
-      setBulkAnalyzing(false);
-    }
+    confirm(`Analyze all ${stats.pending} pending check-ins? This may take a while.`, async () => {
+      setBulkAnalyzing(true);
+      try {
+        const response = await checkInsAPI.analyzeBulk(
+          weekFilter || undefined,
+          selectedCohortId || undefined
+        );
+        toast(`Analyzed ${response.data.analyzed} check-ins.${response.data.errors > 0 ? ` ${response.data.errors} errors.` : ''}`, 'success');
+        await fetchCheckIns();
+      } catch (error) {
+        console.error('Error bulk analyzing:', error);
+        toast('Bulk analysis failed.', 'error');
+      } finally {
+        setBulkAnalyzing(false);
+      }
+    });
   };
 
   const handleViewCheckIn = (checkIn: CheckIn) => {
@@ -164,7 +168,7 @@ export default function CheckInsPage() {
       await fetchCheckIns();
     } catch (error) {
       console.error('Error submitting check-in:', error);
-      alert('Failed to submit check-in.');
+      toast('Failed to submit check-in.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -240,9 +244,7 @@ export default function CheckInsPage() {
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       </AppLayout>
     );
   }

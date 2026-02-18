@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import {
   teamsAPI, sprintsAPI, meetingsAPI, attendanceAPI, retrospectivesAPI, cohortsAPI, fellowsAPI,
 } from '@/lib/api';
@@ -57,6 +59,8 @@ const MEETING_TYPE_ICONS: Record<string, string> = {
 };
 
 export default function SprintBoardPage() {
+  const { toast } = useToast();
+
   // Data state
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -226,7 +230,7 @@ export default function SprintBoardPage() {
       // Refresh upcoming meetings to show updated status
       await fetchUpcomingMeetings();
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to join meeting');
+      toast(error.response?.data?.detail || 'Failed to join meeting', 'error');
     } finally {
       setJoiningMeeting(null);
     }
@@ -239,7 +243,7 @@ export default function SprintBoardPage() {
       await sprintsAPI.generate(selectedTeamId);
       await fetchSprints();
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to generate sprints');
+      toast(error.response?.data?.detail || 'Failed to generate sprints', 'error');
     } finally {
       setGenerating(false);
     }
@@ -313,7 +317,7 @@ export default function SprintBoardPage() {
       await sprintsAPI.updateStatus(sprintId, newStatus);
       await fetchSprints();
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to update sprint status');
+      toast(error.response?.data?.detail || 'Failed to update sprint status', 'error');
     }
   };
 
@@ -326,7 +330,7 @@ export default function SprintBoardPage() {
       await fetchSprints();
       setEditingGoal(false);
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to save goal');
+      toast(error.response?.data?.detail || 'Failed to save goal', 'error');
     } finally {
       setSavingGoal(false);
     }
@@ -375,7 +379,7 @@ export default function SprintBoardPage() {
       resetObjectiveForm();
       await fetchSprintDetail();
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to save objective');
+      toast(error.response?.data?.detail || 'Failed to save objective', 'error');
     } finally {
       setSavingObjective(false);
     }
@@ -387,7 +391,7 @@ export default function SprintBoardPage() {
       await sprintsAPI.deleteObjective(id);
       await fetchSprintDetail();
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to delete objective');
+      toast(error.response?.data?.detail || 'Failed to delete objective', 'error');
     }
   };
 
@@ -410,7 +414,7 @@ export default function SprintBoardPage() {
         team_mood: '', sprint_rating: 7,
       });
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to submit retrospective');
+      toast(error.response?.data?.detail || 'Failed to submit retrospective', 'error');
     } finally {
       setSavingRetro(false);
     }
@@ -450,7 +454,7 @@ export default function SprintBoardPage() {
         (r: any) => r.status === 'absent' && meetings.some((m: Meeting) => m.id === r.meeting_id)
       );
       if (absentRecords.length === 0) {
-        alert('No absent meetings found for this fellow in current sprint.');
+        toast('No absent meetings found for this fellow in current sprint.', 'warning');
         return;
       }
       // Approve the most recent absent record
@@ -460,7 +464,7 @@ export default function SprintBoardPage() {
       setAttendanceSummary(attRes.data);
     } catch (error) {
       console.error('Error approving absence:', error);
-      alert('Failed to approve absence.');
+      toast('Failed to approve absence.', 'error');
     } finally {
       setApprovingAbsence(null);
     }
@@ -515,9 +519,7 @@ export default function SprintBoardPage() {
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       </AppLayout>
     );
   }
@@ -672,7 +674,7 @@ export default function SprintBoardPage() {
                               disabled={joiningMeeting === meeting.id}
                               onClick={() => {
                                 const el = document.getElementById(`join-fellow-${meeting.id}`) as HTMLSelectElement;
-                                if (!el?.value) { alert('Select a fellow first'); return; }
+                                if (!el?.value) { toast('Select a fellow first', 'warning'); return; }
                                 handleJoinMeeting(meeting.id, el.value);
                               }}
                             >

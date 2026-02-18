@@ -18,6 +18,8 @@ from app.schemas.evaluation import (
 )
 from app.utils.audit import log_decision
 from app.utils.email import email_service
+from app.utils.slack import slack_notifier
+from app.services.notification_service import create_notification
 
 router = APIRouter(prefix="/screening")
 
@@ -291,5 +293,15 @@ async def approve_application_evaluation(
             confidence=evaluation.confidence,
             recommended_action=final_decision
         )
+
+    # Create in-app notification for the decision
+    final_decision = override_decision if override_decision else evaluation.outcome
+    await create_notification(
+        db,
+        type="evaluation",
+        title=f"Evaluation Reviewed: {applicant.name}",
+        message=f"{applicant.name} marked as {applicant.status} (decision: {final_decision})",
+        action_url="/screening",
+    )
 
     return {"status": "success", "new_status": applicant.status}

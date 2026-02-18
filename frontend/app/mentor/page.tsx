@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { mentorsAPI } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 import {
   Users,
   AlertTriangle,
@@ -60,6 +61,7 @@ export default function MentorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [flagging, setFlagging] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchMentorProfile();
@@ -108,7 +110,7 @@ export default function MentorPage() {
         }
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to flag fellow.');
+      toast(err.response?.data?.detail || 'Failed to flag fellow.', 'error');
     } finally {
       setFlagging(null);
     }

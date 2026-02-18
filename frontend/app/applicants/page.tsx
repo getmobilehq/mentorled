@@ -8,7 +8,7 @@ import { SearchInput } from '@/components/ui/SearchInput';
 import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { Pagination } from '@/components/ui/Pagination';
 import { TableSkeleton } from '@/components/ui/Skeleton';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -542,9 +542,5 @@ function ApplicantsPageContent() {
 }
 
 export default function ApplicantsPage() {
-  return (
-    <ErrorBoundary>
-      <ApplicantsPageContent />
-    </ErrorBoundary>
-  );
+  return <ApplicantsPageContent />;
 }

@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { emailTemplatesAPI } from '@/lib/api';
 import {
   EmailTemplateListItem,
@@ -225,7 +226,7 @@ export default function EmailTemplatesPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
+          <PageSkeleton />
         ) : (
           <>
             {/* Templates Tab */}

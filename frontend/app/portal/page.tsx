@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import { fellowsAPI, sprintsAPI, meetingsAPI, attendanceAPI, checkInsAPI } from '@/lib/api';
 import {
   Home,
@@ -23,6 +24,7 @@ import {
 import type { Fellow, Sprint, SprintObjective, Meeting, Attendance, CheckIn } from '@/types';
 
 export default function PortalPage() {
+  const { toast } = useToast();
   const [fellow, setFellow] = useState<Fellow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -121,7 +123,7 @@ export default function PortalPage() {
       const attRes = await attendanceAPI.getFellowHistory(fellow.id);
       setAttendance(attRes.data);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Could not join meeting.');
+      toast(err.response?.data?.detail || 'Could not join meeting.', 'error');
     } finally {
       setJoiningMeeting(null);
     }
@@ -149,8 +151,9 @@ export default function PortalPage() {
       // Refresh check-ins
       const res = await checkInsAPI.getFellowCheckIns(fellow.id);
       setCheckIns(res.data);
+      toast('Check-in submitted successfully.', 'success');
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to submit check-in.');
+      toast(err.response?.data?.detail || 'Failed to submit check-in.', 'error');
     } finally {
       setSubmittingCheckIn(false);
     }

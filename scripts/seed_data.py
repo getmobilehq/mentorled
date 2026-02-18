@@ -622,6 +622,48 @@ async def seed_database():
             await db.flush()
             print(f"✓ Created {risk_count} risk assessments (2 weeks x {len(fellows)} fellows)")
 
+            # ======================
+            # 12. SAMPLE NOTIFICATIONS
+            # ======================
+            from app.models.notification import Notification
+
+            sample_notifications = [
+                Notification(
+                    type="risk_alert",
+                    title="High Risk: Sarah Chen",
+                    message="Sarah Chen (Frontend) flagged as at_risk with score 3.2",
+                    action_url="/risk",
+                ),
+                Notification(
+                    type="warning_issued",
+                    title="Warning #1 Issued",
+                    message="Warning issued to David Kim (Backend) for missed deliverables",
+                    action_url="/delivery",
+                ),
+                Notification(
+                    type="evaluation",
+                    title="Evaluation Reviewed: Jane Doe",
+                    message="Jane Doe marked as eligible (decision: eligible)",
+                    action_url="/screening",
+                ),
+                Notification(
+                    type="acceptance",
+                    title="New Acceptance: Alex Rivera",
+                    message="Alex Rivera (Product Designer) accepted with score 85/100",
+                    action_url="/applicants",
+                ),
+                Notification(
+                    type="meeting",
+                    title="Sprint Review Tomorrow",
+                    message="Team Alpha sprint review scheduled for tomorrow at 2:00 PM",
+                    action_url="/sprints",
+                ),
+            ]
+            for n in sample_notifications:
+                db.add(n)
+            await db.flush()
+            print(f"✓ Created {len(sample_notifications)} sample notifications")
+
             await db.commit()
             print("\n✅ Database seeded successfully!")
             print(f"\n📊 Summary:")
@@ -640,6 +682,7 @@ async def seed_database():
             print(f"   - Risk Assessments: {risk_count} (7-signal format, weeks 2-3)")
             print(f"   - Challenges: {len(challenges)}")
             print(f"   - Microship Submissions: 1")
+            print(f"   - Notifications: {len(sample_notifications)}")
             for c in challenges:
                 if c.status == 'active':
                     print(f"     [{c.status}] {c.title} → /submit/{c.share_token}")

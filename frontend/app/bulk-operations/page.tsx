@@ -4,8 +4,10 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import { applicantsAPI, bulkAPI } from '@/lib/api';
 import {
   Upload,
@@ -20,6 +22,7 @@ import {
 import type { Applicant } from '@/types';
 
 export default function BulkOperationsPage() {
+  const { toast } = useToast();
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -61,14 +64,14 @@ export default function BulkOperationsPage() {
 
   const handleBulkEvaluate = async (autoProcess: boolean = false) => {
     if (selectedIds.size === 0) {
-      alert('Please select at least one applicant');
+      toast('Please select at least one applicant', 'warning');
       return;
     }
 
     setProcessing(true);
     try {
       await bulkAPI.evaluateApplications(Array.from(selectedIds), autoProcess);
-      alert(`Queued ${selectedIds.size} applicants for evaluation. Processing in background...`);
+      toast(`Queued ${selectedIds.size} applicants for evaluation. Processing in background...`, 'success');
       setSelectedIds(new Set());
 
       // Refresh after a delay
@@ -77,7 +80,7 @@ export default function BulkOperationsPage() {
       }, 2000);
     } catch (error) {
       console.error('Error in bulk evaluation:', error);
-      alert('Failed to queue evaluations. Please try again.');
+      toast('Failed to queue evaluations. Please try again.', 'error');
     } finally {
       setProcessing(false);
     }
@@ -85,7 +88,7 @@ export default function BulkOperationsPage() {
 
   const handleBulkStatusUpdate = async (newStatus: string) => {
     if (selectedIds.size === 0) {
-      alert('Please select at least one applicant');
+      toast('Please select at least one applicant', 'warning');
       return;
     }
 
@@ -95,12 +98,12 @@ export default function BulkOperationsPage() {
     setProcessing(true);
     try {
       await bulkAPI.updateStatus(Array.from(selectedIds), newStatus);
-      alert(`Updated status for ${selectedIds.size} applicants`);
+      toast(`Updated status for ${selectedIds.size} applicants`, 'success');
       setSelectedIds(new Set());
       await fetchApplicants();
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('Failed to update status. Please try again.');
+      toast('Failed to update status. Please try again.', 'error');
     } finally {
       setProcessing(false);
     }
@@ -113,11 +116,11 @@ export default function BulkOperationsPage() {
     setImporting(true);
     try {
       const response = await bulkAPI.importApplicants(file);
-      alert(`Successfully imported ${response.data.created_count} applicants`);
+      toast(`Successfully imported ${response.data.created_count} applicants`, 'success');
       await fetchApplicants();
     } catch (error) {
       console.error('Error importing CSV:', error);
-      alert('Failed to import CSV. Please check the file format and try again.');
+      toast('Failed to import CSV. Please check the file format and try again.', 'error');
     } finally {
       setImporting(false);
       // Reset file input
@@ -141,7 +144,7 @@ export default function BulkOperationsPage() {
       document.body.removeChild(a);
     } catch (error) {
       console.error('Error exporting applicants:', error);
-      alert('Failed to export applicants. Please try again.');
+      toast('Failed to export applicants. Please try again.', 'error');
     }
   };
 
@@ -161,7 +164,7 @@ export default function BulkOperationsPage() {
       document.body.removeChild(a);
     } catch (error) {
       console.error('Error exporting fellows:', error);
-      alert('Failed to export fellows. Please try again.');
+      toast('Failed to export fellows. Please try again.', 'error');
     }
   };
 
@@ -169,13 +172,9 @@ export default function BulkOperationsPage() {
 
   if (loading) {
     return (
-
-        <AppLayout>
-          <div className="flex items-center justify-center h-full">
-            <div className="text-gray-500">Loading...</div>
-          </div>
-        </AppLayout>
-
+      <AppLayout>
+        <PageSkeleton />
+      </AppLayout>
     );
   }
 

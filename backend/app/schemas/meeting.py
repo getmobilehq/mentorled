@@ -50,6 +50,27 @@ class MeetingDetailResponse(BaseModel):
         from_attributes = True
 
 
+class MeetingCreateRequest(BaseModel):
+    sprint_id: UUID
+    team_id: UUID
+    meeting_type: str
+    scheduled_at: datetime
+    duration_minutes: int = 60
+    meeting_link: Optional[str] = None
+    is_locked: bool = True
+    unlock_time: Optional[datetime] = None
+
+
+class MeetingUpdateRequest(BaseModel):
+    meeting_type: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = None
+    meeting_link: Optional[str] = None
+    is_locked: Optional[bool] = None
+    unlock_time: Optional[datetime] = None
+    status: Optional[str] = None
+
+
 class MeetingJoinResponse(BaseModel):
     meeting_link: Optional[str] = None
     attendance_recorded: bool

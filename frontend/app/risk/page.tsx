@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { riskAPI, cohortsAPI } from '@/lib/api';
@@ -200,9 +201,7 @@ export default function RiskDashboardPage() {
   if (loading && !dashboardData) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       </AppLayout>
     );
   }

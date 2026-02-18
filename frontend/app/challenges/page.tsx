@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { useToast } from '@/components/ui/Toast';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { challengesAPI, cohortsAPI, trackConfigsAPI, microshipAPI } from '@/lib/api';
@@ -69,6 +71,7 @@ const SCORE_LABELS: Record<string, string> = {
 };
 
 export default function ChallengesPage() {
+  const { toast } = useToast();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [loading, setLoading] = useState(true);
@@ -234,7 +237,7 @@ export default function ChallengesPage() {
       if (viewMode === 'track') await fetchTrackSummary();
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      alert(detail || 'Failed to create challenge.');
+      toast(detail || 'Failed to create challenge.', 'error');
     } finally {
       setCreating(false);
     }
@@ -320,7 +323,7 @@ export default function ChallengesPage() {
       }
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      alert(detail || 'Evaluation failed. Please try again.');
+      toast(detail || 'Evaluation failed. Please try again.', 'error');
     } finally {
       setEvaluatingId(null);
     }
@@ -434,7 +437,7 @@ export default function ChallengesPage() {
   // AI Assist
   const handleAIAssist = async () => {
     if (formData.role_type === 'all') {
-      alert('Please select a specific role before using AI Assist.');
+      toast('Please select a specific role before using AI Assist.', 'warning');
       return;
     }
     setGenerating(true);
@@ -465,7 +468,7 @@ export default function ChallengesPage() {
       }));
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      alert(detail || 'AI generation failed. Please try again or fill in manually.');
+      toast(detail || 'AI generation failed. Please try again or fill in manually.', 'error');
     } finally {
       setGenerating(false);
     }
@@ -525,7 +528,7 @@ export default function ChallengesPage() {
       await fetchTrackSummary();
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      alert(detail || 'Failed to save track configuration.');
+      toast(detail || 'Failed to save track configuration.', 'error');
     } finally {
       setSavingConfig(false);
     }
@@ -550,9 +553,7 @@ export default function ChallengesPage() {
   return (
     <AppLayout>
       {loading ? (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       ) : (
         <div className="space-y-6">
           {/* Header */}

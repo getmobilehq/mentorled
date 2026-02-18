@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { deliveryAPI, cohortsAPI } from '@/lib/api';
 import { api } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 import {
   Shield,
   AlertTriangle,
@@ -24,6 +26,7 @@ import {
 import type { RiskDashboard, Warning, WarningDraftResponse, Cohort } from '@/types';
 
 export default function DeliveryPage() {
+  const { toast } = useToast();
   const [dashboard, setDashboard] = useState<RiskDashboard | null>(null);
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [selectedCohortId, setSelectedCohortId] = useState<string>('');
@@ -70,7 +73,7 @@ export default function DeliveryPage() {
       setWarningModalOpen(true);
     } catch (error) {
       console.error('Error drafting warning:', error);
-      alert('Failed to draft warning. Make sure fellow has a risk assessment first.');
+      toast('Failed to draft warning. Make sure fellow has a risk assessment first.', 'error');
     } finally {
       setDraftingWarning(null);
     }
@@ -92,7 +95,7 @@ export default function DeliveryPage() {
       await fetchDashboard();
     } catch (error) {
       console.error('Error sending warning:', error);
-      alert('Failed to send warning. Please try again.');
+      toast('Failed to send warning. Please try again.', 'error');
     }
   };
 
@@ -139,9 +142,7 @@ export default function DeliveryPage() {
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       </AppLayout>
     );
   }

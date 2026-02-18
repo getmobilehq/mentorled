@@ -7,7 +7,9 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import { fellowsAPI, placementAPI, cohortsAPI } from '@/lib/api';
 import {
   Briefcase,
@@ -48,6 +50,7 @@ const EXPERIENCE_LEVELS = [
 ];
 
 export default function PlacementPage() {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'profiles' | 'opportunities' | 'matches'>('profiles');
   const [fellows, setFellows] = useState<Fellow[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -129,7 +132,7 @@ export default function PlacementPage() {
       await fetchData();
     } catch (error) {
       console.error('Error generating profile:', error);
-      alert('Failed to generate profile. Please try again.');
+      toast('Failed to generate profile. Please try again.', 'error');
     } finally {
       setGenerating(null);
     }
@@ -144,7 +147,7 @@ export default function PlacementPage() {
       setActiveTab('matches');
     } catch (error) {
       console.error('Error matching opportunities:', error);
-      alert('Failed to match opportunities. Ensure there are active opportunities.');
+      toast('Failed to match opportunities. Ensure there are active opportunities.', 'error');
     } finally {
       setMatching(null);
     }
@@ -178,7 +181,7 @@ export default function PlacementPage() {
       await fetchData();
     } catch (error) {
       console.error('Error saving opportunity:', error);
-      alert('Failed to save opportunity.');
+      toast('Failed to save opportunity.', 'error');
     } finally {
       setSavingOpp(false);
     }
@@ -217,7 +220,7 @@ export default function PlacementPage() {
       setIntroModal(true);
     } catch (error) {
       console.error('Error drafting introduction:', error);
-      alert('Failed to draft introduction.');
+      toast('Failed to draft introduction.', 'error');
     } finally {
       setDraftingIntro(null);
     }
@@ -304,9 +307,7 @@ export default function PlacementPage() {
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       </AppLayout>
     );
   }

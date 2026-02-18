@@ -5,8 +5,10 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import { fellowsAPI, deliveryAPI, checkInsAPI, riskAPI, cohortsAPI, attendanceAPI, teamsAPI } from '@/lib/api';
 import {
   Users,
@@ -22,6 +24,7 @@ import {
 import type { Fellow, RiskAssessment, Cohort, CheckIn, RiskAssessmentDetail, Team, Attendance } from '@/types';
 
 export default function FellowsPage() {
+  const { toast } = useToast();
   const [fellows, setFellows] = useState<Fellow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFellow, setSelectedFellow] = useState<Fellow | null>(null);
@@ -104,7 +107,7 @@ export default function FellowsPage() {
       await fetchFellows();
     } catch (error) {
       console.error('Error assessing risk:', error);
-      alert('Failed to assess risk. Please try again.');
+      toast('Failed to assess risk. Please try again.', 'error');
     } finally {
       setAssessingRisk(null);
     }
@@ -157,7 +160,7 @@ export default function FellowsPage() {
       await fetchFellows();
     } catch (error) {
       console.error('Error saving milestones:', error);
-      alert('Failed to save milestones.');
+      toast('Failed to save milestones.', 'error');
     } finally {
       setSavingMilestones(false);
     }
@@ -201,9 +204,7 @@ export default function FellowsPage() {
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       </AppLayout>
     );
   }

@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import { teamsAPI, cohortsAPI, fellowsAPI } from '@/lib/api';
 import {
   Users, Plus, Pencil, ExternalLink, UserPlus, UserMinus,
@@ -54,6 +56,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function TeamsPage() {
+  const { toast, confirm } = useToast();
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [selectedCohortId, setSelectedCohortId] = useState<string>('');
@@ -177,7 +180,7 @@ export default function TeamsPage() {
       await fetchTeams();
     } catch (error) {
       console.error('Error saving team:', error);
-      alert('Failed to save team.');
+      toast('Failed to save team.', 'error');
     } finally {
       setSaving(false);
     }
@@ -213,22 +216,24 @@ export default function TeamsPage() {
       await fetchTeams();
     } catch (error) {
       console.error('Error assigning fellow:', error);
-      alert('Failed to assign fellow.');
+      toast('Failed to assign fellow.', 'error');
     } finally {
       setAssigning(false);
     }
   };
 
   const handleRemoveFellow = async (fellowId: string) => {
-    if (!teamDetail || !confirm('Remove this fellow from the team?')) return;
-    try {
-      await teamsAPI.removeFellow(teamDetail.id, fellowId);
-      const teamRes = await teamsAPI.get(teamDetail.id);
-      setTeamDetail(teamRes.data);
-      await fetchTeams();
-    } catch (error) {
-      console.error('Error removing fellow:', error);
-    }
+    if (!teamDetail) return;
+    confirm('Remove this fellow from the team?', async () => {
+      try {
+        await teamsAPI.removeFellow(teamDetail.id, fellowId);
+        const teamRes = await teamsAPI.get(teamDetail.id);
+        setTeamDetail(teamRes.data);
+        await fetchTeams();
+      } catch (error) {
+        console.error('Error removing fellow:', error);
+      }
+    });
   };
 
   // Unassigned fellows (not on any team in this team's detail)
@@ -243,9 +248,7 @@ export default function TeamsPage() {
   if (loading && teams.length === 0) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       </AppLayout>
     );
   }

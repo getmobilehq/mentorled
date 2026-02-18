@@ -29,13 +29,20 @@ interface UserRecord {
   last_login?: string;
 }
 
-const ROLE_OPTIONS = ['ADMIN', 'REVIEWER', 'VIEWER'];
+const ROLE_OPTIONS = ['admin', 'reviewer', 'viewer'];
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Admin',
+  reviewer: 'Reviewer',
+  viewer: 'Viewer',
+  api: 'API',
+};
 
 const ROLE_BADGE_VARIANT: Record<string, 'success' | 'info' | 'default' | 'warning'> = {
-  ADMIN: 'success',
-  REVIEWER: 'info',
-  VIEWER: 'default',
-  API: 'warning',
+  admin: 'success',
+  reviewer: 'info',
+  viewer: 'default',
+  api: 'warning',
 };
 
 export default function SettingsPage() {
@@ -60,11 +67,11 @@ export default function SettingsPage() {
   const [createUsername, setCreateUsername] = useState('');
   const [createFullName, setCreateFullName] = useState('');
   const [createPassword, setCreatePassword] = useState('');
-  const [createRole, setCreateRole] = useState('VIEWER');
+  const [createRole, setCreateRole] = useState('viewer');
   const [createError, setCreateError] = useState('');
   const [createSaving, setCreateSaving] = useState(false);
 
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'admin';
 
   const fetchUsers = useCallback(async () => {
     if (!isAdmin) return;
@@ -133,7 +140,7 @@ export default function SettingsPage() {
       setCreateUsername('');
       setCreateFullName('');
       setCreatePassword('');
-      setCreateRole('VIEWER');
+      setCreateRole('viewer');
       fetchUsers();
     } catch (err: any) {
       setCreateError(err?.response?.data?.detail || 'Failed to create user');
@@ -208,7 +215,7 @@ export default function SettingsPage() {
                   <p className="text-sm text-gray-600">{user.email}</p>
                 </div>
                 <Badge variant={ROLE_BADGE_VARIANT[user.role] || 'default'} className="ml-auto">
-                  {user.role}
+                  {ROLE_LABELS[user.role] || user.role}
                 </Badge>
               </div>
 
@@ -219,7 +226,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Role</span>
-                  <span className="text-gray-900">{user.role}</span>
+                  <span className="text-gray-900 capitalize">{ROLE_LABELS[user.role] || user.role}</span>
                 </div>
               </div>
             </Card>
@@ -335,7 +342,7 @@ export default function SettingsPage() {
                               className="text-xs border border-gray-200 rounded px-2 py-1 bg-white disabled:opacity-50"
                             >
                               {ROLE_OPTIONS.map((r) => (
-                                <option key={r} value={r}>{r}</option>
+                                <option key={r} value={r}>{ROLE_LABELS[r] || r}</option>
                               ))}
                             </select>
                           </td>
@@ -441,7 +448,7 @@ export default function SettingsPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
                 >
                   {ROLE_OPTIONS.map((r) => (
-                    <option key={r} value={r}>{r}</option>
+                    <option key={r} value={r}>{ROLE_LABELS[r] || r}</option>
                   ))}
                 </select>
               </div>

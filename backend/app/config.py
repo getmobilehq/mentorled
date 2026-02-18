@@ -12,8 +12,8 @@ class Settings(BaseSettings):
 
     # Anthropic
     ANTHROPIC_API_KEY: str
-    DEFAULT_MODEL: str = "claude-3-haiku-20240307"  # Using Haiku for both models (Sonnet requires newer SDK)
-    FAST_MODEL: str = "claude-3-haiku-20240307"
+    DEFAULT_MODEL: str = "claude-sonnet-4-5-20250929"
+    FAST_MODEL: str = "claude-haiku-4-5-20251001"
 
     # Auth
     SECRET_KEY: str = "your-secret-key-change-in-production"
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     SCREENING_CONFIDENCE_THRESHOLD: float = 0.7
     RISK_ALERT_THRESHOLD: float = 0.5
 
-    # Cost Tracking (USD per 1M tokens - approximate)
+    # Cost Tracking (USD per 1M tokens - Sonnet 4.5 pricing)
     COST_PER_1M_INPUT_TOKENS: float = 3.0
     COST_PER_1M_OUTPUT_TOKENS: float = 15.0
 

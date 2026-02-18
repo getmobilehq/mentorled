@@ -435,6 +435,17 @@ export const retrospectivesAPI = {
     api.get(`/api/sprints/retrospectives/sprint/${sprintId}`),
 };
 
+export const notificationsAPI = {
+  list: (params?: { unread_only?: boolean; limit?: number }) =>
+    api.get('/api/notifications/', { params }),
+  unreadCount: () =>
+    api.get('/api/notifications/unread-count'),
+  markRead: (notificationIds: string[]) =>
+    api.post('/api/notifications/mark-read', { notification_ids: notificationIds }),
+  markAllRead: () =>
+    api.post('/api/notifications/mark-all-read'),
+};
+
 export const healthAPI = {
   check: () =>
     api.get('/health'),

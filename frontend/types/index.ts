@@ -646,3 +646,22 @@ export interface TeamAttendanceSummary {
   total_meetings: number;
   members: AttendanceSummary[];
 }
+
+// Notifications
+export type NotificationType = 'risk_alert' | 'warning_issued' | 'batch_complete' | 'acceptance' | 'evaluation' | 'meeting';
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  action_url?: string;
+  is_read: boolean;
+  read_at?: string;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  notifications: AppNotification[];
+  unread_count: number;
+}

@@ -16,6 +16,7 @@ from app.models.applicant import Applicant
 from app.agents.delivery_agent import DeliveryAgent
 from app.utils.email import email_service
 from app.utils.slack import slack_notifier
+from app.services.notification_service import create_notification
 
 router = APIRouter(prefix="/delivery")
 
@@ -125,6 +126,13 @@ async def assess_risk(
                 risk_level=assessment["risk_level"],
                 risk_score=assessment["risk_score"],
                 concerns=assessment.get("concerns", [])
+            )
+            await create_notification(
+                db,
+                type="risk_alert",
+                title=f"High Risk: {applicant.name}",
+                message=f"{applicant.name} ({fellow.role}) flagged as {assessment['risk_level']} with score {assessment['risk_score']:.1f}",
+                action_url="/risk",
             )
 
     return {
@@ -253,6 +261,24 @@ async def approve_warning(
 
     await db.commit()
     await db.refresh(warning)
+
+    # Send Slack notification and create in-app notification for approved warnings
+    if request.approved and applicant:
+        warning_num = fellow.warnings_count or 1
+        background_tasks.add_task(
+            slack_notifier.notify_warning_issued,
+            fellow_name=applicant.name,
+            warning_number=warning_num,
+            message=warning.final_message or warning.draft_message or "",
+            risk_level=fellow.current_risk_level or "at_risk",
+        )
+        await create_notification(
+            db,
+            type="warning_issued",
+            title=f"Warning #{warning_num} Issued",
+            message=f"Warning issued to {applicant.name} ({fellow.role})",
+            action_url=f"/delivery",
+        )
 
     return {
         "warning_id": str(warning.id),

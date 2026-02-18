@@ -22,6 +22,7 @@ from app.models.sprint_objective import SprintObjective
 from app.models.meeting import Meeting
 from app.models.attendance import Attendance
 from app.models.retrospective import Retrospective
+from app.models.notification import Notification
 
 __all__ = [
     "Cohort",
@@ -48,4 +49,5 @@ __all__ = [
     "Meeting",
     "Attendance",
     "Retrospective",
+    "Notification",
 ]

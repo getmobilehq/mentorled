@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export function AppLayout({ children }: { children: ReactNode }) {
   return (
@@ -20,7 +21,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {/* Page content */}
           <main className="flex-1 overflow-y-auto bg-gray-50">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              {children}
+              <ErrorBoundary>
+                {children}
+              </ErrorBoundary>
             </div>
           </main>
         </div>

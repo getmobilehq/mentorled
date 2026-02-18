@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { useToast } from '@/components/ui/Toast';
 import { microshipAPI, applicantsAPI, cohortsAPI } from '@/lib/api';
 import {
   Play,
@@ -29,6 +31,7 @@ import type {
 } from '@/types';
 
 export default function MicroshipPage() {
+  const { toast, confirm } = useToast();
   const [submissions, setSubmissions] = useState<MicroshipSubmission[]>([]);
   const [applicants, setApplicants] = useState<{ [key: string]: Applicant }>({});
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
@@ -81,7 +84,7 @@ export default function MicroshipPage() {
       await fetchSubmissions();
     } catch (error) {
       console.error('Error evaluating submission:', error);
-      alert('Failed to evaluate submission. Please try again.');
+      toast('Failed to evaluate submission. Please try again.', 'error');
     } finally {
       setEvaluating(null);
     }
@@ -91,20 +94,20 @@ export default function MicroshipPage() {
     const pending = submissions.filter(s => !s.raw_analysis);
     if (pending.length === 0) return;
 
-    if (!confirm(`Evaluate ${pending.length} pending submissions using AI? This may take a while.`)) return;
-
-    setBulkEvaluating(true);
-    try {
-      const result = await microshipAPI.evaluateBulk();
-      const data = result.data;
-      alert(`Bulk evaluation complete: ${data.evaluated} evaluated, ${data.errors} errors.`);
-      await fetchSubmissions();
-    } catch (error) {
-      console.error('Error bulk evaluating:', error);
-      alert('Failed to start bulk evaluation.');
-    } finally {
-      setBulkEvaluating(false);
-    }
+    confirm(`Evaluate ${pending.length} pending submissions using AI? This may take a while.`, async () => {
+      setBulkEvaluating(true);
+      try {
+        const result = await microshipAPI.evaluateBulk();
+        const data = result.data;
+        toast(`Bulk evaluation complete: ${data.evaluated} evaluated, ${data.errors} errors.`, 'success');
+        await fetchSubmissions();
+      } catch (error) {
+        console.error('Error bulk evaluating:', error);
+        toast('Failed to start bulk evaluation.', 'error');
+      } finally {
+        setBulkEvaluating(false);
+      }
+    });
   };
 
   const handleViewDetail = (submission: MicroshipSubmission) => {
@@ -164,9 +167,7 @@ export default function MicroshipPage() {
   return (
     <AppLayout>
       {loading ? (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       ) : (
         <div className="space-y-6">
           {/* Page header */}

@@ -5,7 +5,9 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
+import { useToast } from '@/components/ui/Toast';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { applicantsAPI, screeningAPI, cohortsAPI, bulkAPI } from '@/lib/api';
 import {
@@ -25,6 +27,7 @@ import type { Applicant, Evaluation, Cohort, QueueStats } from '@/types';
 type StatusFilter = 'all' | 'applied' | 'screening' | 'eligible' | 'not_eligible' | 'accepted' | 'rejected';
 
 export default function ScreeningPage() {
+  const { toast, confirm } = useToast();
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +80,7 @@ export default function ScreeningPage() {
       await fetchQueueStats();
     } catch (error) {
       console.error('Error evaluating applicant:', error);
-      alert('Failed to evaluate applicant. Please try again.');
+      toast('Failed to evaluate applicant. Please try again.', 'error');
     } finally {
       setEvaluating(null);
     }
@@ -97,7 +100,7 @@ export default function ScreeningPage() {
       await fetchQueueStats();
     } catch (error) {
       console.error('Error approving evaluation:', error);
-      alert('Failed to save decision. Please try again.');
+      toast('Failed to save decision. Please try again.', 'error');
     }
   };
 
@@ -105,21 +108,21 @@ export default function ScreeningPage() {
     const pending = applicants.filter(a => a.status === 'applied');
     if (pending.length === 0) return;
 
-    if (!confirm(`Evaluate ${pending.length} pending applicants using AI?`)) return;
-
-    setBatchEvaluating(true);
-    try {
-      const ids = pending.map(a => a.id);
-      await bulkAPI.evaluateApplications(ids);
-      alert(`Batch evaluation started for ${ids.length} applicants.`);
-      await fetchApplicants();
-      await fetchQueueStats();
-    } catch (error) {
-      console.error('Error batch evaluating:', error);
-      alert('Failed to start batch evaluation.');
-    } finally {
-      setBatchEvaluating(false);
-    }
+    confirm(`Evaluate ${pending.length} pending applicants using AI?`, async () => {
+      setBatchEvaluating(true);
+      try {
+        const ids = pending.map(a => a.id);
+        await bulkAPI.evaluateApplications(ids);
+        toast(`Batch evaluation started for ${ids.length} applicants.`, 'success');
+        await fetchApplicants();
+        await fetchQueueStats();
+      } catch (error) {
+        console.error('Error batch evaluating:', error);
+        toast('Failed to start batch evaluation.', 'error');
+      } finally {
+        setBatchEvaluating(false);
+      }
+    });
   };
 
   // Computed filtered applicants
@@ -187,9 +190,7 @@ export default function ScreeningPage() {
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       </AppLayout>
     );
   }

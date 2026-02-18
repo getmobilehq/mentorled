@@ -11,7 +11,10 @@ import math
 from app.database import get_db
 from app.models.meeting import Meeting, MeetingStatus
 from app.models.attendance import Attendance, AttendanceStatus
-from app.schemas.meeting import MeetingResponse, MeetingDetailResponse, MeetingJoinResponse
+from app.schemas.meeting import (
+    MeetingResponse, MeetingDetailResponse, MeetingJoinResponse,
+    MeetingCreateRequest, MeetingUpdateRequest,
+)
 
 router = APIRouter(prefix="/meetings")
 
@@ -77,6 +80,68 @@ async def get_meeting(meeting_id: UUID, db: AsyncSession = Depends(get_db)):
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     return meeting
+
+
+@router.post("/", response_model=MeetingResponse)
+async def create_meeting(
+    request: MeetingCreateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new meeting."""
+    unlock_time = request.unlock_time or (request.scheduled_at - timedelta(minutes=15))
+    meeting = Meeting(
+        sprint_id=request.sprint_id,
+        team_id=request.team_id,
+        meeting_type=request.meeting_type,
+        scheduled_at=request.scheduled_at,
+        duration_minutes=request.duration_minutes,
+        meeting_link=request.meeting_link,
+        is_locked=request.is_locked,
+        unlock_time=unlock_time,
+        status=MeetingStatus.SCHEDULED,
+    )
+    db.add(meeting)
+    await db.commit()
+    await db.refresh(meeting)
+    return meeting
+
+
+@router.put("/{meeting_id}", response_model=MeetingResponse)
+async def update_meeting(
+    meeting_id: UUID,
+    request: MeetingUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a meeting's details."""
+    result = await db.execute(select(Meeting).where(Meeting.id == meeting_id))
+    meeting = result.scalar_one_or_none()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    update_data = request.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        if value is not None:
+            setattr(meeting, key, value)
+
+    await db.commit()
+    await db.refresh(meeting)
+    return meeting
+
+
+@router.delete("/{meeting_id}")
+async def delete_meeting(
+    meeting_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a meeting."""
+    result = await db.execute(select(Meeting).where(Meeting.id == meeting_id))
+    meeting = result.scalar_one_or_none()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    await db.delete(meeting)
+    await db.commit()
+    return {"status": "success", "deleted": str(meeting_id)}
 
 
 @router.post("/{meeting_id}/join", response_model=MeetingJoinResponse)

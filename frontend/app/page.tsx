@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { applicantsAPI, screeningAPI, healthAPI, analyticsAPI, challengesAPI, teamsAPI, sprintsAPI, meetingsAPI } from '@/lib/api';
 import {
@@ -126,9 +127,7 @@ export default function Dashboard() {
   return (
     <AppLayout>
       {loading ? (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       ) : (
         <div className="space-y-6">
           {/* Page header */}

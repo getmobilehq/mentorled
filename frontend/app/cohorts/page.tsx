@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/Card';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
+import { PageSkeleton } from '@/components/ui/Skeleton';
+import { useToast } from '@/components/ui/Toast';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { cohortsAPI, applicantsAPI, fellowsAPI } from '@/lib/api';
 import {
@@ -34,6 +36,7 @@ const STATUS_TRANSITIONS: Record<string, { next: string; label: string }> = {
 };
 
 export default function CohortsPage() {
+  const { toast } = useToast();
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [loading, setLoading] = useState(true);
   const [applicantCounts, setApplicantCounts] = useState<Record<string, number>>({});
@@ -122,7 +125,7 @@ export default function CohortsPage() {
       await fetchData();
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      alert(detail || 'Failed to save cohort.');
+      toast(detail || 'Failed to save cohort.', 'error');
     } finally {
       setSaving(false);
     }
@@ -134,7 +137,7 @@ export default function CohortsPage() {
       await fetchData();
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      alert(detail || 'Failed to update status.');
+      toast(detail || 'Failed to update status.', 'error');
     }
   };
 
@@ -147,7 +150,7 @@ export default function CohortsPage() {
       await fetchData();
     } catch (error: any) {
       const detail = error.response?.data?.detail;
-      alert(detail || 'Failed to graduate cohort.');
+      toast(detail || 'Failed to graduate cohort.', 'error');
     } finally {
       setGraduating(false);
     }
@@ -163,9 +166,7 @@ export default function CohortsPage() {
   return (
     <AppLayout>
       {loading ? (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-gray-500">Loading...</div>
-        </div>
+        <PageSkeleton />
       ) : (
         <div className="space-y-6">
           {/* Header */}
