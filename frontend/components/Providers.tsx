@@ -3,11 +3,14 @@
 import { ReactNode } from 'react';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/components/ui/Toast';
+import { RealtimeProvider } from '@/contexts/RealtimeContext';
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
-      <ToastProvider>{children}</ToastProvider>
+      <RealtimeProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </RealtimeProvider>
     </AuthProvider>
   );
 }

@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.attendance import Attendance, AttendanceStatus
 from app.models.meeting import Meeting, MeetingStatus
 from app.models.fellow import Fellow
+from app.services.event_service import event_publisher
 from app.schemas.attendance import (
     AttendanceResponse, AttendanceApproveRequest,
     AttendanceSummary, TeamAttendanceSummary,
@@ -170,6 +171,12 @@ async def approve_absence(
 
     await db.commit()
     await db.refresh(attendance)
+
+    # Broadcast absence approved event
+    await event_publisher.absence_approved(
+        fellow_id=str(data.fellow_id), meeting_id=str(meeting_id)
+    )
+
     return attendance
 
 

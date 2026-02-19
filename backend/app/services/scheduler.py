@@ -19,6 +19,7 @@ from app.utils.email import email_service
 from app.services.risk_service import RiskDetectionService
 from app.models.meeting import Meeting, MeetingStatus
 from app.models.attendance import Attendance, AttendanceStatus
+from app.services.event_service import event_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -505,6 +506,12 @@ class SchedulerService:
                     await db.commit()
                     if to_unlock:
                         logger.info(f"Unlocked {len(to_unlock)} meeting(s)")
+                        for m in to_unlock:
+                            await event_publisher.meeting_unlocked(
+                                meeting_id=str(m.id),
+                                team_id=str(m.team_id),
+                                meeting_type=m.meeting_type if isinstance(m.meeting_type, str) else m.meeting_type.value,
+                            )
                     if to_activate:
                         logger.info(f"Activated {len(to_activate)} meeting(s)")
 

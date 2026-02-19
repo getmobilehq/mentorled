@@ -19,6 +19,7 @@ from app.schemas.check_in import (
 )
 from app.middleware.auth import get_current_user, require_role
 from app.agents.check_in_analyzer import CheckInAnalyzer
+from app.services.event_service import event_publisher
 
 router = APIRouter(prefix="/check-ins")
 
@@ -52,6 +53,11 @@ async def create_check_in(
     db.add(db_check_in)
     await db.commit()
     await db.refresh(db_check_in)
+
+    # Broadcast check-in submitted event
+    await event_publisher.check_in_submitted(
+        fellow_id=str(check_in.fellow_id), week=check_in.week
+    )
 
     return db_check_in
 
@@ -167,6 +173,13 @@ async def analyze_check_in(
 
     # Build response
     analysis = CheckInAnalysis(**analysis_result)
+
+    # Broadcast analysis event
+    await event_publisher.check_in_analyzed(
+        fellow_id=str(fellow.id),
+        check_in_id=str(check_in.id),
+        sentiment=analysis_result.get('sentiment_score'),
+    )
 
     return CheckInAnalysisResponse(
         check_in_id=check_in.id,

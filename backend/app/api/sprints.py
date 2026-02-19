@@ -10,6 +10,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models.sprint import Sprint, SprintStatus
 from app.models.sprint_objective import SprintObjective, ObjectiveStatus
+from app.services.event_service import event_publisher
 from app.models.retrospective import Retrospective
 from app.models.team import Team
 from app.schemas.sprint import (
@@ -251,11 +252,26 @@ async def update_objective(
     if not objective:
         raise HTTPException(status_code=404, detail="Objective not found")
 
+    old_status = objective.status
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(objective, field, value)
 
     await db.commit()
     await db.refresh(objective)
+
+    # Broadcast if objective was just completed
+    new_status = objective.status if isinstance(objective.status, str) else objective.status.value
+    if new_status == "done" and old_status != "done":
+        # Get sprint for team_id
+        sprint_result = await db.execute(select(Sprint).where(Sprint.id == objective.sprint_id))
+        sprint = sprint_result.scalar_one_or_none()
+        if sprint:
+            await event_publisher.objective_completed(
+                objective_id=str(objective.id),
+                sprint_id=str(sprint.id),
+                team_id=str(sprint.team_id),
+            )
+
     return objective
 
 

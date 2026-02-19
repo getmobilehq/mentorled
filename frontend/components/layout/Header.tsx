@@ -7,6 +7,7 @@ import {
   AlertTriangle, ShieldAlert, FileCheck, UserCheck, Calendar,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRealtime } from '@/contexts/RealtimeContext';
 import { notificationsAPI } from '@/lib/api';
 import { AppNotification } from '@/types';
 
@@ -45,6 +46,7 @@ function timeAgo(dateStr: string): string {
 
 export const Header: React.FC<HeaderProps> = ({ title }) => {
   const { user, logout } = useAuth();
+  const { connected, subscribe } = useRealtime();
   const router = useRouter();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -69,6 +71,14 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
+
+  // Auto-refresh on WebSocket notification events
+  useEffect(() => {
+    const unsub = subscribe('notification_created', () => {
+      fetchNotifications();
+    });
+    return unsub;
+  }, [subscribe, fetchNotifications]);
 
   // Fetch when dropdown opens
   useEffect(() => {
@@ -133,6 +143,9 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
 
         {/* Right side - Notifications and User */}
         <div className="flex items-center space-x-4">
+          {/* Connection indicator */}
+          <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-300'}`} title={connected ? 'Live updates active' : 'Connecting...'} />
+
           {/* Notifications */}
           <div className="relative" ref={notifRef}>
             <button

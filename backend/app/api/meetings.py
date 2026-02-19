@@ -16,6 +16,7 @@ from app.schemas.meeting import (
     MeetingCreateRequest, MeetingUpdateRequest,
 )
 from app.services.google_calendar import google_calendar_service
+from app.services.event_service import event_publisher
 
 router = APIRouter(prefix="/meetings")
 
@@ -299,6 +300,14 @@ async def join_meeting(
     )
     db.add(attendance)
     await db.commit()
+
+    # Broadcast attendance event
+    await event_publisher.attendance_recorded(
+        fellow_id=str(fellow_id),
+        meeting_id=str(meeting_id),
+        status=attendance_status.value,
+        team_id=str(meeting.team_id),
+    )
 
     return MeetingJoinResponse(
         meeting_link=meeting.meeting_link,
