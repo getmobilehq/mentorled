@@ -5,9 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from uuid import UUID
 
+from datetime import datetime, timedelta
+
 from app.database import get_db
 from app.models.attendance import Attendance, AttendanceStatus
-from app.models.meeting import Meeting
+from app.models.meeting import Meeting, MeetingStatus
 from app.models.fellow import Fellow
 from app.schemas.attendance import (
     AttendanceResponse, AttendanceApproveRequest,
@@ -169,3 +171,52 @@ async def approve_absence(
     await db.commit()
     await db.refresh(attendance)
     return attendance
+
+
+@router.post("/finalize-meetings")
+async def finalize_meetings(db: AsyncSession = Depends(get_db)):
+    """
+    Manually trigger absent-marking for all past meetings.
+    Finds meetings past their 3-hour join window, marks absent fellows,
+    and transitions meetings to COMPLETED status.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=3)
+
+    result = await db.execute(
+        select(Meeting)
+        .where(Meeting.scheduled_at <= cutoff)
+        .where(Meeting.status != MeetingStatus.COMPLETED)
+    )
+    meetings = result.scalars().all()
+
+    total_absent = 0
+    for meeting in meetings:
+        fellows_result = await db.execute(
+            select(Fellow).where(Fellow.team_id == meeting.team_id)
+        )
+        fellows = fellows_result.scalars().all()
+
+        for fellow in fellows:
+            existing = await db.execute(
+                select(Attendance.id)
+                .where(Attendance.meeting_id == meeting.id)
+                .where(Attendance.fellow_id == fellow.id)
+            )
+            if existing.scalar_one_or_none():
+                continue
+
+            db.add(Attendance(
+                meeting_id=meeting.id,
+                fellow_id=fellow.id,
+                status=AttendanceStatus.ABSENT,
+            ))
+            total_absent += 1
+
+        meeting.status = MeetingStatus.COMPLETED
+
+    await db.commit()
+    return {
+        "status": "success",
+        "meetings_finalized": len(meetings),
+        "absences_marked": total_absent,
+    }

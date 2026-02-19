@@ -17,6 +17,8 @@ from app.models.cohort import Cohort
 from app.agents.screening_agent import screening_agent
 from app.utils.email import email_service
 from app.services.risk_service import RiskDetectionService
+from app.models.meeting import Meeting, MeetingStatus
+from app.models.attendance import Attendance, AttendanceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,15 @@ class SchedulerService:
             CronTrigger(day_of_week='fri', hour=17, minute=0),
             id="weekly_cost_report",
             name="Weekly Cost Report",
+            replace_existing=True
+        )
+
+        # Hourly: Auto-mark absent fellows for completed meetings
+        self.scheduler.add_job(
+            self.auto_mark_absent_meetings,
+            CronTrigger(minute=0),
+            id="auto_mark_absent",
+            name="Auto-Mark Absent Meetings",
             replace_existing=True
         )
 
@@ -448,6 +459,64 @@ class SchedulerService:
 
             except Exception as e:
                 logger.error(f"Error in weekly_cost_report: {str(e)}")
+
+    async def auto_mark_absent_meetings(self):
+        """
+        Hourly task: Mark absent fellows for meetings past 3-hour join window,
+        then transition those meetings to COMPLETED status.
+        """
+        logger.info("Running auto-mark-absent for meetings...")
+
+        async with AsyncSessionLocal() as db:
+            try:
+                cutoff = datetime.utcnow() - timedelta(hours=3)
+
+                # Find meetings past join window that aren't completed yet
+                result = await db.execute(
+                    select(Meeting)
+                    .where(Meeting.scheduled_at <= cutoff)
+                    .where(Meeting.status != MeetingStatus.COMPLETED)
+                )
+                meetings = result.scalars().all()
+
+                if not meetings:
+                    logger.info("No meetings to finalize")
+                    return
+
+                total_absent = 0
+                for meeting in meetings:
+                    # Get all fellows on this team
+                    fellows_result = await db.execute(
+                        select(Fellow).where(Fellow.team_id == meeting.team_id)
+                    )
+                    fellows = fellows_result.scalars().all()
+
+                    for fellow in fellows:
+                        # Check if attendance already recorded
+                        existing = await db.execute(
+                            select(Attendance.id)
+                            .where(Attendance.meeting_id == meeting.id)
+                            .where(Attendance.fellow_id == fellow.id)
+                        )
+                        if existing.scalar_one_or_none():
+                            continue
+
+                        # Mark absent
+                        db.add(Attendance(
+                            meeting_id=meeting.id,
+                            fellow_id=fellow.id,
+                            status=AttendanceStatus.ABSENT,
+                        ))
+                        total_absent += 1
+
+                    # Mark meeting completed
+                    meeting.status = MeetingStatus.COMPLETED
+
+                await db.commit()
+                logger.info(f"Finalized {len(meetings)} meetings, marked {total_absent} absences")
+
+            except Exception as e:
+                logger.error(f"Error in auto_mark_absent_meetings: {str(e)}")
 
 
 # Global scheduler instance

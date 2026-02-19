@@ -7,7 +7,7 @@ import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
-import { fellowsAPI, sprintsAPI, meetingsAPI, attendanceAPI, checkInsAPI } from '@/lib/api';
+import { fellowsAPI, sprintsAPI, meetingsAPI, attendanceAPI, checkInsAPI, cohortsAPI, teamsAPI } from '@/lib/api';
 import {
   Home,
   Target,
@@ -20,8 +20,22 @@ import {
   Send,
   Shield,
   TrendingUp,
+  FileText,
+  Github,
+  Link2,
+  ExternalLink,
+  Zap,
 } from 'lucide-react';
-import type { Fellow, Sprint, SprintObjective, Meeting, Attendance, CheckIn } from '@/types';
+import type { Fellow, Sprint, SprintObjective, Meeting, Attendance, CheckIn, Cohort, Team } from '@/types';
+
+// Evidence type icons
+const EVIDENCE_ICONS: Record<string, React.ElementType> = {
+  github: Github,
+  document: FileText,
+  deployment: ExternalLink,
+  video: Video,
+  figma: Link2,
+};
 
 export default function PortalPage() {
   const { toast } = useToast();
@@ -29,7 +43,12 @@ export default function PortalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Context data
+  const [cohort, setCohort] = useState<Cohort | null>(null);
+  const [team, setTeam] = useState<Team | null>(null);
+
   // Sprint data
+  const [allSprints, setAllSprints] = useState<Sprint[]>([]);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
   const [objectives, setObjectives] = useState<SprintObjective[]>([]);
 
@@ -64,20 +83,34 @@ export default function PortalPage() {
       const fellowData = res.data;
       setFellow(fellowData);
 
-      // Fetch all related data in parallel
       const promises: Promise<any>[] = [];
 
+      // Fetch cohort context
+      if (fellowData.cohort_id) {
+        promises.push(
+          cohortsAPI.get(fellowData.cohort_id).then(r => setCohort(r.data)).catch(() => {})
+        );
+      }
+
       if (fellowData.team_id) {
+        // Fetch team info
+        promises.push(
+          teamsAPI.get(fellowData.team_id).then(r => setTeam(r.data)).catch(() => {})
+        );
+        // Fetch all sprints for delivery rate + find active
         promises.push(
           sprintsAPI.list(fellowData.team_id).then(r => {
             const sprints = r.data as Sprint[];
+            setAllSprints(sprints);
             const active = sprints.find(s => s.status === 'active') || sprints[0];
             setActiveSprint(active || null);
             if (active) {
               return sprintsAPI.getObjectives(active.id).then(or => setObjectives(or.data));
             }
-          }).catch(() => {}),
-          meetingsAPI.upcoming(fellowData.team_id, 7).then(r => setUpcomingMeetings(r.data)).catch(() => {}),
+          }).catch(() => {})
+        );
+        promises.push(
+          meetingsAPI.upcoming(fellowData.team_id, 7).then(r => setUpcomingMeetings(r.data)).catch(() => {})
         );
       }
 
@@ -94,9 +127,10 @@ export default function PortalPage() {
     }
   };
 
+  // --- Computed Metrics ---
+
   const currentWeek = useMemo(() => {
     if (!fellow) return 1;
-    // Approximate — will be refined by cohort start date
     return checkIns.length > 0 ? Math.max(...checkIns.map(c => c.week)) + 1 : 1;
   }, [fellow, checkIns]);
 
@@ -104,12 +138,80 @@ export default function PortalPage() {
     return checkIns.some(c => c.week === currentWeek);
   }, [checkIns, currentWeek]);
 
+  const programWeeks = useMemo(() => {
+    if (!cohort) return { current: currentWeek, total: 12 };
+    const start = new Date(cohort.start_date);
+    const end = new Date(cohort.end_date);
+    const total = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (7 * 86400000)));
+    const elapsed = Math.ceil((Date.now() - start.getTime()) / (7 * 86400000));
+    return { current: Math.max(1, Math.min(elapsed, total)), total };
+  }, [cohort, currentWeek]);
+
   const attendanceScore = useMemo(() => {
     if (attendance.length === 0) return null;
     const scoreMap: Record<string, number> = { present: 1.0, late: 0.8, very_late: 0.5, absent: 0.0, approved_absence: 0.7 };
     const total = attendance.reduce((sum, a) => sum + (scoreMap[a.status] ?? 0.5), 0);
     return total / attendance.length;
   }, [attendance]);
+
+  const attendanceDetail = useMemo(() => {
+    const onTime = attendance.filter(a => a.status === 'present').length;
+    return { onTime, total: attendance.length };
+  }, [attendance]);
+
+  const deliveryRate = useMemo(() => {
+    if (!allSprints.length) return null;
+    const completed = allSprints.reduce((s, sp) => s + (sp.completed_objectives || 0), 0);
+    const total = allSprints.reduce((s, sp) => s + (sp.objective_count || 0), 0);
+    return total > 0 ? { completed, total, pct: Math.round((completed / total) * 100) } : null;
+  }, [allSprints]);
+
+  const checkInCompletion = useMemo(() => {
+    const expected = Math.max(1, programWeeks.current - 1);
+    const submitted = checkIns.length;
+    return {
+      submitted,
+      expected: Math.max(expected, submitted),
+      pct: expected > 0 ? Math.round((submitted / expected) * 100) : 100,
+    };
+  }, [checkIns, programWeeks]);
+
+  const sprintDaysRemaining = useMemo(() => {
+    if (!activeSprint) return null;
+    const end = new Date(activeSprint.end_date);
+    const diff = Math.ceil((end.getTime() - Date.now()) / 86400000);
+    return Math.max(0, diff);
+  }, [activeSprint]);
+
+  const teamProgress = useMemo(() => {
+    if (!activeSprint) return null;
+    const done = activeSprint.completed_objectives || 0;
+    const total = activeSprint.objective_count || objectives.length;
+    return { done, total, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
+  }, [activeSprint, objectives]);
+
+  const overallStatus = useMemo(() => {
+    const scores: number[] = [];
+    if (attendanceScore !== null) scores.push(attendanceScore * 100);
+    if (deliveryRate) scores.push(deliveryRate.pct);
+    if (checkInCompletion) scores.push(checkInCompletion.pct);
+    const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 100;
+    if (avg >= 70) return { label: 'On Track', color: 'text-green-600', bg: 'bg-green-100', ring: 'ring-green-200' };
+    if (avg >= 50) return { label: 'Monitor', color: 'text-yellow-600', bg: 'bg-yellow-100', ring: 'ring-yellow-200' };
+    return { label: 'At Risk', color: 'text-red-600', bg: 'bg-red-100', ring: 'ring-red-200' };
+  }, [attendanceScore, deliveryRate, checkInCompletion]);
+
+  // Objectives assigned to this fellow that are done but missing evidence
+  const pendingEvidence = useMemo(() => {
+    if (!fellow) return [];
+    return objectives.filter(
+      obj => obj.owner_fellow_id === fellow.id && obj.status === 'done' && !obj.evidence_url
+    );
+  }, [objectives, fellow]);
+
+  const hasActions = !hasCheckedInThisWeek || pendingEvidence.length > 0;
+
+  // --- Handlers ---
 
   const handleJoinMeeting = async (meetingId: string) => {
     if (!fellow) return;
@@ -119,7 +221,6 @@ export default function PortalPage() {
       if (res.data.meeting_link) {
         window.open(res.data.meeting_link, '_blank');
       }
-      // Refresh attendance
       const attRes = await attendanceAPI.getFellowHistory(fellow.id);
       setAttendance(attRes.data);
     } catch (err: any) {
@@ -148,7 +249,6 @@ export default function PortalPage() {
         collaboration_rating: 8,
         energy_level: 7,
       });
-      // Refresh check-ins
       const res = await checkInsAPI.getFellowCheckIns(fellow.id);
       setCheckIns(res.data);
       toast('Check-in submitted successfully.', 'success');
@@ -159,15 +259,13 @@ export default function PortalPage() {
     }
   };
 
-  const getRiskColor = (level?: string) => {
-    const map: Record<string, string> = { on_track: 'text-green-600', monitor: 'text-blue-600', at_risk: 'text-yellow-600', critical: 'text-red-600' };
-    return map[level || ''] || 'text-gray-400';
+  const getBarColor = (pct: number) => {
+    if (pct >= 70) return 'bg-green-500';
+    if (pct >= 50) return 'bg-yellow-500';
+    return 'bg-red-500';
   };
 
-  const getRiskBadgeVariant = (level?: string): 'success' | 'info' | 'warning' | 'danger' | 'default' => {
-    const map: Record<string, 'success' | 'info' | 'warning' | 'danger'> = { on_track: 'success', monitor: 'info', at_risk: 'warning', critical: 'danger' };
-    return map[level || ''] || 'default';
-  };
+  // --- Render ---
 
   if (loading) {
     return (
@@ -198,11 +296,27 @@ export default function PortalPage() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        {/* Welcome Header */}
+        {/* Header with Context */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Welcome, {fellow.name}</h1>
-            <p className="mt-1 text-gray-600 capitalize">{fellow.role.replace('_', ' ')} Fellow</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+              <span className="capitalize">{fellow.role.replace('_', ' ')} Fellow</span>
+              {team && (
+                <>
+                  <span className="text-gray-300">·</span>
+                  <span>{team.name}</span>
+                </>
+              )}
+              <span className="text-gray-300">·</span>
+              <span>Week {programWeeks.current} of {programWeeks.total}</span>
+              {activeSprint && (
+                <>
+                  <span className="text-gray-300">·</span>
+                  <span>Sprint {activeSprint.sprint_number}</span>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex gap-3">
             {!hasCheckedInThisWeek && (
@@ -214,66 +328,135 @@ export default function PortalPage() {
           </div>
         </div>
 
-        {/* Status Cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <div className="flex items-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                <Shield className="h-5 w-5 text-green-600" />
-              </div>
-              <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500">Status</p>
-                <Badge variant={getStatusBadgeVariant(fellow.status)}>{fellow.status}</Badge>
+        {/* Performance Card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Your Performance</CardTitle>
+              <div className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold ${overallStatus.bg} ${overallStatus.color} ring-1 ${overallStatus.ring}`}>
+                <div className={`h-2 w-2 rounded-full ${overallStatus.color === 'text-green-600' ? 'bg-green-500' : overallStatus.color === 'text-yellow-600' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                {overallStatus.label}
               </div>
             </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-                <AlertTriangle className="h-5 w-5 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {/* Attendance */}
+              <div className="flex items-center gap-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 flex-shrink-0">
+                  <Activity className="h-4 w-4 text-purple-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-gray-700">Attendance Score</span>
+                    <span className="text-sm font-bold text-gray-900">
+                      {attendanceScore !== null ? `${(attendanceScore * 100).toFixed(0)}%` : '-'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${attendanceScore !== null ? getBarColor(attendanceScore * 100) : 'bg-gray-300'}`}
+                      style={{ width: `${attendanceScore !== null ? Math.min(attendanceScore * 100, 100) : 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {attendanceDetail.onTime}/{attendanceDetail.total} meetings on time
+                  </p>
+                </div>
               </div>
-              <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500">Risk Level</p>
-                {fellow.current_risk_level ? (
-                  <Badge variant={getRiskBadgeVariant(fellow.current_risk_level)}>
-                    {fellow.current_risk_level.replace('_', ' ')}
-                  </Badge>
-                ) : (
-                  <span className="text-sm text-gray-400">Not assessed</span>
+
+              {/* Sprint Delivery */}
+              <div className="flex items-center gap-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 flex-shrink-0">
+                  <Target className="h-4 w-4 text-blue-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-gray-700">Sprint Delivery</span>
+                    <span className="text-sm font-bold text-gray-900">
+                      {deliveryRate ? `${deliveryRate.pct}%` : '-'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${deliveryRate ? getBarColor(deliveryRate.pct) : 'bg-gray-300'}`}
+                      style={{ width: `${deliveryRate ? Math.min(deliveryRate.pct, 100) : 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {deliveryRate ? `${deliveryRate.completed}/${deliveryRate.total} objectives completed` : 'No objectives yet'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Check-ins */}
+              <div className="flex items-center gap-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-100 flex-shrink-0">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-gray-700">Check-ins</span>
+                    <span className="text-sm font-bold text-gray-900">
+                      {checkInCompletion.submitted}/{checkInCompletion.expected}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${getBarColor(checkInCompletion.pct)}`}
+                      style={{ width: `${Math.min(checkInCompletion.pct, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {checkInCompletion.pct >= 100 ? 'All submitted on time' : `${checkInCompletion.expected - checkInCompletion.submitted} check-in(s) behind`}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Action Required */}
+        {hasActions && (
+          <Card className="border-yellow-200 bg-yellow-50/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-yellow-800">
+                <Zap className="h-5 w-5" />
+                Action Required
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {!hasCheckedInThisWeek && (
+                  <div className="flex items-center justify-between rounded-lg border border-yellow-200 bg-white p-3">
+                    <div className="flex items-center gap-3">
+                      <Send className="h-4 w-4 text-yellow-600" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Week {currentWeek} Check-in due</p>
+                        <p className="text-xs text-gray-500">Submit your weekly check-in</p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="primary" onClick={() => setCheckInModalOpen(true)}>
+                      Start Check-in
+                    </Button>
+                  </div>
                 )}
+                {pendingEvidence.map(obj => (
+                  <div key={obj.id} className="flex items-center justify-between rounded-lg border border-yellow-200 bg-white p-3">
+                    <div className="flex items-center gap-3">
+                      <FileText className="h-4 w-4 text-yellow-600" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Submit evidence</p>
+                        <p className="text-xs text-gray-500 line-clamp-1">{obj.description}</p>
+                      </div>
+                    </div>
+                    <Badge variant="warning">Evidence needed</Badge>
+                  </div>
+                ))}
               </div>
-            </div>
+            </CardContent>
           </Card>
-
-          <Card>
-            <div className="flex items-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100">
-                <Activity className="h-5 w-5 text-purple-600" />
-              </div>
-              <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500">Attendance</p>
-                <p className={`text-lg font-bold ${attendanceScore !== null ? (attendanceScore >= 0.9 ? 'text-green-600' : attendanceScore >= 0.7 ? 'text-yellow-600' : 'text-red-600') : 'text-gray-400'}`}>
-                  {attendanceScore !== null ? `${(attendanceScore * 100).toFixed(0)}%` : '-'}
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-100">
-                <AlertTriangle className="h-5 w-5 text-yellow-600" />
-              </div>
-              <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500">Warnings</p>
-                <p className={`text-lg font-bold ${fellow.warnings_count && fellow.warnings_count > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {fellow.warnings_count || 0}
-                </p>
-              </div>
-            </div>
-          </Card>
-        </div>
+        )}
 
         {/* Milestones */}
         <Card>
@@ -311,9 +494,16 @@ export default function PortalPage() {
           {/* Current Sprint */}
           <Card>
             <CardHeader>
-              <CardTitle>
-                {activeSprint ? `Sprint ${activeSprint.sprint_number}` : 'Current Sprint'}
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>
+                  {activeSprint ? `Sprint ${activeSprint.sprint_number}` : 'Current Sprint'}
+                </CardTitle>
+                {sprintDaysRemaining !== null && (
+                  <Badge variant={sprintDaysRemaining > 5 ? 'success' : sprintDaysRemaining > 1 ? 'warning' : 'danger'}>
+                    {sprintDaysRemaining === 0 ? 'Ends today' : `${sprintDaysRemaining} day${sprintDaysRemaining !== 1 ? 's' : ''} left`}
+                  </Badge>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {activeSprint ? (
@@ -330,6 +520,23 @@ export default function PortalPage() {
                     <span>{new Date(activeSprint.end_date).toLocaleDateString()}</span>
                   </div>
 
+                  {/* Team Progress */}
+                  {teamProgress && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-700">
+                          Team Progress: {teamProgress.done}/{teamProgress.total} objectives ({teamProgress.pct}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${getBarColor(teamProgress.pct)}`}
+                          style={{ width: `${Math.min(teamProgress.pct, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* Objectives */}
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-2">Objectives ({objectives.length})</p>
@@ -337,22 +544,47 @@ export default function PortalPage() {
                       <p className="text-sm text-gray-400">No objectives set yet.</p>
                     ) : (
                       <div className="space-y-2">
-                        {objectives.map(obj => (
-                          <div key={obj.id} className="flex items-start gap-2 rounded border p-2">
-                            <div className={`mt-0.5 h-4 w-4 rounded-full flex-shrink-0 ${
-                              obj.status === 'done' ? 'bg-green-500' :
-                              obj.status === 'in_progress' ? 'bg-blue-500' :
-                              obj.status === 'not_done' ? 'bg-red-500' : 'bg-gray-300'
-                            }`} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm">{obj.description}</p>
-                              <div className="flex gap-2 mt-1">
-                                <Badge variant="secondary">{obj.status.replace('_', ' ')}</Badge>
-                                {obj.owner_role && <span className="text-xs text-gray-400 capitalize">{obj.owner_role.replace('_', ' ')}</span>}
+                        {objectives.map(obj => {
+                          const isOwner = fellow && obj.owner_fellow_id === fellow.id;
+                          const EvidenceIcon = obj.evidence_type ? EVIDENCE_ICONS[obj.evidence_type] || Link2 : null;
+                          return (
+                            <div
+                              key={obj.id}
+                              className={`flex items-start gap-2 rounded border p-2 ${isOwner ? 'border-green-200 bg-green-50/50' : ''}`}
+                            >
+                              <div className={`mt-0.5 h-4 w-4 rounded-full flex-shrink-0 ${
+                                obj.status === 'done' ? 'bg-green-500' :
+                                obj.status === 'in_progress' ? 'bg-blue-500' :
+                                obj.status === 'not_done' ? 'bg-red-500' : 'bg-gray-300'
+                              }`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm">{obj.description}</p>
+                                <div className="flex flex-wrap items-center gap-2 mt-1">
+                                  <Badge variant="secondary">{obj.status.replace('_', ' ')}</Badge>
+                                  {isOwner && <Badge variant="info">You</Badge>}
+                                  {obj.owner_role && !isOwner && (
+                                    <span className="text-xs text-gray-400 capitalize">{obj.owner_role.replace('_', ' ')}</span>
+                                  )}
+                                  {obj.evidence_url && EvidenceIcon && (
+                                    <a
+                                      href={obj.evidence_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                                      onClick={e => e.stopPropagation()}
+                                    >
+                                      <EvidenceIcon className="h-3 w-3" />
+                                      Evidence
+                                    </a>
+                                  )}
+                                  {isOwner && obj.status === 'done' && !obj.evidence_url && (
+                                    <span className="text-xs text-yellow-600 font-medium">Evidence needed</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -376,18 +608,39 @@ export default function PortalPage() {
                   {upcomingMeetings.slice(0, 6).map(meeting => {
                     const scheduledAt = new Date(meeting.scheduled_at);
                     const isUnlocked = meeting.status === 'unlocked' || meeting.status === 'active';
+                    const isLive = meeting.status === 'active';
+                    const daysUntil = Math.ceil((scheduledAt.getTime() - Date.now()) / 86400000);
                     return (
                       <div key={meeting.id} className="flex items-center justify-between rounded-lg border p-3">
                         <div className="flex items-center gap-3">
-                          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isUnlocked ? 'bg-green-100' : 'bg-gray-100'}`}>
-                            {isUnlocked ? <Video className="h-4 w-4 text-green-600" /> : <Clock className="h-4 w-4 text-gray-400" />}
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                            isLive ? 'bg-red-100' : isUnlocked ? 'bg-green-100' : 'bg-gray-100'
+                          }`}>
+                            {isLive ? (
+                              <div className="relative">
+                                <Video className="h-4 w-4 text-red-600" />
+                                <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                              </div>
+                            ) : isUnlocked ? (
+                              <Video className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Clock className="h-4 w-4 text-gray-400" />
+                            )}
                           </div>
                           <div>
-                            <p className="text-sm font-medium capitalize">{meeting.meeting_type.replace('_', ' ')}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium capitalize">{meeting.meeting_type.replace('_', ' ')}</p>
+                              {isLive && <Badge variant="danger">LIVE</Badge>}
+                            </div>
                             <p className="text-xs text-gray-500">
                               {scheduledAt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                               {' '}at{' '}
                               {scheduledAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                              {!isUnlocked && daysUntil > 0 && (
+                                <span className="ml-2 text-gray-400">
+                                  · Unlocks in {daysUntil} day{daysUntil !== 1 ? 's' : ''}
+                                </span>
+                              )}
                             </p>
                           </div>
                         </div>
