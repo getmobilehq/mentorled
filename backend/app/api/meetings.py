@@ -15,6 +15,7 @@ from app.schemas.meeting import (
     MeetingResponse, MeetingDetailResponse, MeetingJoinResponse,
     MeetingCreateRequest, MeetingUpdateRequest,
 )
+from app.services.google_calendar import google_calendar_service
 
 router = APIRouter(prefix="/meetings")
 
@@ -87,15 +88,31 @@ async def create_meeting(
     request: MeetingCreateRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new meeting."""
+    """Create a new meeting. Auto-generates Google Meet link if enabled."""
     unlock_time = request.unlock_time or (request.scheduled_at - timedelta(minutes=15))
+    link = request.meeting_link
+    google_event_id = None
+
+    # Try to create Google Calendar event with Meet link
+    if not link and google_calendar_service.is_enabled:
+        summary = f"{request.meeting_type.replace('_', ' ').title()}"
+        gcal_result = await google_calendar_service.create_meeting_event(
+            summary=summary,
+            start_time=request.scheduled_at,
+            duration_minutes=request.duration_minutes,
+        )
+        if gcal_result.get("meet_link"):
+            link = gcal_result["meet_link"]
+            google_event_id = gcal_result["google_event_id"]
+
     meeting = Meeting(
         sprint_id=request.sprint_id,
         team_id=request.team_id,
         meeting_type=request.meeting_type,
         scheduled_at=request.scheduled_at,
         duration_minutes=request.duration_minutes,
-        meeting_link=request.meeting_link,
+        meeting_link=link,
+        google_event_id=google_event_id,
         is_locked=request.is_locked,
         unlock_time=unlock_time,
         status=MeetingStatus.SCHEDULED,
@@ -133,15 +150,88 @@ async def delete_meeting(
     meeting_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a meeting."""
+    """Delete a meeting and its Google Calendar event if applicable."""
     result = await db.execute(select(Meeting).where(Meeting.id == meeting_id))
     meeting = result.scalar_one_or_none()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
+    # Clean up Google Calendar event
+    if meeting.google_event_id:
+        await google_calendar_service.delete_event(meeting.google_event_id)
+
     await db.delete(meeting)
     await db.commit()
     return {"status": "success", "deleted": str(meeting_id)}
+
+
+@router.post("/update-lock-states")
+async def update_lock_states(db: AsyncSession = Depends(get_db)):
+    """Manually trigger meeting lock state transitions (same as scheduler job)."""
+    now = datetime.utcnow()
+
+    # Unlock meetings
+    result = await db.execute(
+        select(Meeting)
+        .where(Meeting.status == MeetingStatus.SCHEDULED.value)
+        .where(Meeting.unlock_time <= now)
+    )
+    to_unlock = result.scalars().all()
+    for m in to_unlock:
+        m.status = MeetingStatus.UNLOCKED
+        m.is_locked = False
+
+    # Activate meetings
+    result = await db.execute(
+        select(Meeting)
+        .where(Meeting.status == MeetingStatus.UNLOCKED.value)
+        .where(Meeting.scheduled_at <= now)
+    )
+    to_activate = result.scalars().all()
+    for m in to_activate:
+        m.status = MeetingStatus.ACTIVE
+
+    await db.commit()
+    return {
+        "status": "success",
+        "unlocked": len(to_unlock),
+        "activated": len(to_activate),
+    }
+
+
+@router.post("/{meeting_id}/generate-meet-link")
+async def generate_meet_link(
+    meeting_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a real Google Meet link for a meeting (requires Google Calendar enabled)."""
+    if not google_calendar_service.is_enabled:
+        raise HTTPException(status_code=400, detail="Google Calendar integration is not enabled")
+
+    result = await db.execute(
+        select(Meeting).options(selectinload(Meeting.team)).where(Meeting.id == meeting_id)
+    )
+    meeting = result.scalar_one_or_none()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    team_name = meeting.team.name if meeting.team else "Team"
+    summary = f"{team_name} — {meeting.meeting_type.replace('_', ' ').title()}"
+    gcal_result = await google_calendar_service.create_meeting_event(
+        summary=summary,
+        start_time=meeting.scheduled_at,
+        duration_minutes=meeting.duration_minutes,
+        description=f"MentorLed meeting · {team_name}",
+    )
+
+    if gcal_result.get("meet_link"):
+        meeting.meeting_link = gcal_result["meet_link"]
+        meeting.google_event_id = gcal_result["google_event_id"]
+        await db.commit()
+        await db.refresh(meeting)
+        return {"status": "success", "meeting_link": meeting.meeting_link, "google_event_id": meeting.google_event_id}
+
+    raise HTTPException(status_code=500, detail="Failed to generate Google Meet link")
 
 
 @router.post("/{meeting_id}/join", response_model=MeetingJoinResponse)

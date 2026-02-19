@@ -11,6 +11,7 @@ from app.models.sprint import Sprint, SprintStatus
 from app.models.meeting import Meeting, MeetingType, MeetingStatus
 from app.models.team import Team
 from app.models.cohort import Cohort
+from app.services.google_calendar import google_calendar_service
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ async def generate_sprints_for_team(
 
         sprints = []
         total_meetings = 0
+        use_gcal = google_calendar_service.is_enabled
 
         for sprint_num in range(1, 7):
             sprint_start = start_monday + timedelta(weeks=(sprint_num - 1) * 2)
@@ -89,67 +91,46 @@ async def generate_sprints_for_team(
             await db.flush()
             sprints.append(sprint)
 
+            # Define all meetings for this sprint
+            meeting_defs = [
+                # (meeting_type, scheduled_datetime, duration_minutes)
+                (MeetingType.SPRINT_PLANNING, datetime.combine(sprint_start, time(10, 0)), 90),
+                (MeetingType.STANDUP, datetime.combine(sprint_start + timedelta(days=1), time(9, 0)), 30),
+                (MeetingType.STANDUP, datetime.combine(sprint_start + timedelta(days=3), time(9, 0)), 30),
+                (MeetingType.STANDUP, datetime.combine(sprint_start + timedelta(days=8), time(9, 0)), 30),
+                (MeetingType.SPRINT_REVIEW, datetime.combine(sprint_end, time(14, 0)), 90),
+                (MeetingType.SPRINT_RETROSPECTIVE, datetime.combine(sprint_end, time(16, 0)), 60),
+            ]
+
             meetings = []
+            for m_type, m_dt, m_duration in meeting_defs:
+                link = _meeting_link_placeholder(team.name, m_type.value, sprint_num)
+                google_event_id = None
 
-            # 1. Sprint Planning: Monday Week 1, 10:00 AM
-            planning_dt = datetime.combine(sprint_start, time(10, 0))
-            meetings.append(Meeting(
-                sprint_id=sprint.id,
-                team_id=team_id,
-                meeting_type=MeetingType.SPRINT_PLANNING,
-                scheduled_at=planning_dt,
-                duration_minutes=90,
-                meeting_link=_meeting_link_placeholder(team.name, "planning", sprint_num),
-                is_locked=True,
-                unlock_time=planning_dt - timedelta(minutes=15),
-                status=MeetingStatus.SCHEDULED,
-            ))
+                if use_gcal:
+                    summary = f"{team.name} — {m_type.value.replace('_', ' ').title()} (Sprint {sprint_num})"
+                    result = await google_calendar_service.create_meeting_event(
+                        summary=summary,
+                        start_time=m_dt,
+                        duration_minutes=m_duration,
+                        description=f"Sprint {sprint_num} · {team.name}",
+                    )
+                    if result.get("meet_link"):
+                        link = result["meet_link"]
+                        google_event_id = result["google_event_id"]
 
-            # 2. Standups: Tue W1, Thu W1, Tue W2 at 9:00 AM
-            standup_offsets = [1, 3, 8]  # days from sprint_start Monday
-            for offset in standup_offsets:
-                standup_dt = datetime.combine(
-                    sprint_start + timedelta(days=offset), time(9, 0)
-                )
                 meetings.append(Meeting(
                     sprint_id=sprint.id,
                     team_id=team_id,
-                    meeting_type=MeetingType.STANDUP,
-                    scheduled_at=standup_dt,
-                    duration_minutes=30,
-                    meeting_link=_meeting_link_placeholder(team.name, "standup", sprint_num),
+                    meeting_type=m_type,
+                    scheduled_at=m_dt,
+                    duration_minutes=m_duration,
+                    meeting_link=link,
+                    google_event_id=google_event_id,
                     is_locked=True,
-                    unlock_time=standup_dt - timedelta(minutes=15),
+                    unlock_time=m_dt - timedelta(minutes=15),
                     status=MeetingStatus.SCHEDULED,
                 ))
-
-            # 3. Sprint Review: Friday Week 2, 2:00 PM
-            review_dt = datetime.combine(sprint_end, time(14, 0))
-            meetings.append(Meeting(
-                sprint_id=sprint.id,
-                team_id=team_id,
-                meeting_type=MeetingType.SPRINT_REVIEW,
-                scheduled_at=review_dt,
-                duration_minutes=90,
-                meeting_link=_meeting_link_placeholder(team.name, "review", sprint_num),
-                is_locked=True,
-                unlock_time=review_dt - timedelta(minutes=15),
-                status=MeetingStatus.SCHEDULED,
-            ))
-
-            # 4. Sprint Retrospective: Friday Week 2, 4:00 PM
-            retro_dt = datetime.combine(sprint_end, time(16, 0))
-            meetings.append(Meeting(
-                sprint_id=sprint.id,
-                team_id=team_id,
-                meeting_type=MeetingType.SPRINT_RETROSPECTIVE,
-                scheduled_at=retro_dt,
-                duration_minutes=60,
-                meeting_link=_meeting_link_placeholder(team.name, "retro", sprint_num),
-                is_locked=True,
-                unlock_time=retro_dt - timedelta(minutes=15),
-                status=MeetingStatus.SCHEDULED,
-            ))
 
             db.add_all(meetings)
             total_meetings += len(meetings)

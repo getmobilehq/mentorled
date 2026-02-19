@@ -41,6 +41,7 @@ class Meeting(Base):
     scheduled_at: Mapped[datetime] = mapped_column(nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     meeting_link: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    google_event_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     is_locked: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     unlock_time: Mapped[datetime] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(

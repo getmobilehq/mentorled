@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     ENABLE_SLACK_NOTIFICATIONS: bool = False
     SLACK_MENTION_USER: str = ""  # Slack user ID to mention for urgent alerts
 
+    # Google Calendar Integration
+    GOOGLE_SERVICE_ACCOUNT_JSON: str = ""  # Path to service account JSON file
+    GOOGLE_CALENDAR_ID: str = ""  # Calendar ID to create events on (or "primary")
+    ENABLE_GOOGLE_CALENDAR: bool = False
+
     @field_validator('CORS_ORIGINS', mode='before')
     @classmethod
     def parse_cors_origins(cls, v):

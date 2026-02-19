@@ -95,6 +95,15 @@ class SchedulerService:
             replace_existing=True
         )
 
+        # Every minute: Manage meeting lock states (unlock/activate/complete)
+        self.scheduler.add_job(
+            self.manage_meeting_locks,
+            CronTrigger(second=0),  # Every minute at :00 seconds
+            id="manage_meeting_locks",
+            name="Meeting Lock Management",
+            replace_existing=True
+        )
+
         self.scheduler.start()
         logger.info("Scheduler started successfully")
 
@@ -459,6 +468,48 @@ class SchedulerService:
 
             except Exception as e:
                 logger.error(f"Error in weekly_cost_report: {str(e)}")
+
+    async def manage_meeting_locks(self):
+        """
+        Every minute: Transition meeting states.
+        - SCHEDULED → UNLOCKED when current time >= unlock_time
+        - UNLOCKED → ACTIVE when current time >= scheduled_at
+        - ACTIVE → COMPLETED when current time >= scheduled_at + duration (handled by auto_mark_absent hourly)
+        """
+        async with AsyncSessionLocal() as db:
+            try:
+                now = datetime.utcnow()
+
+                # 1. Unlock meetings whose unlock_time has passed
+                result = await db.execute(
+                    select(Meeting)
+                    .where(Meeting.status == MeetingStatus.SCHEDULED)
+                    .where(Meeting.unlock_time <= now)
+                )
+                to_unlock = result.scalars().all()
+                for meeting in to_unlock:
+                    meeting.status = MeetingStatus.UNLOCKED
+                    meeting.is_locked = False
+
+                # 2. Activate meetings whose scheduled_at has arrived
+                result = await db.execute(
+                    select(Meeting)
+                    .where(Meeting.status == MeetingStatus.UNLOCKED)
+                    .where(Meeting.scheduled_at <= now)
+                )
+                to_activate = result.scalars().all()
+                for meeting in to_activate:
+                    meeting.status = MeetingStatus.ACTIVE
+
+                if to_unlock or to_activate:
+                    await db.commit()
+                    if to_unlock:
+                        logger.info(f"Unlocked {len(to_unlock)} meeting(s)")
+                    if to_activate:
+                        logger.info(f"Activated {len(to_activate)} meeting(s)")
+
+            except Exception as e:
+                logger.error(f"Error in manage_meeting_locks: {str(e)}")
 
     async def auto_mark_absent_meetings(self):
         """

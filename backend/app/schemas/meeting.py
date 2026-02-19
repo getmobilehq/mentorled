@@ -12,6 +12,7 @@ class MeetingResponse(BaseModel):
     scheduled_at: datetime
     duration_minutes: int
     meeting_link: Optional[str] = None
+    google_event_id: Optional[str] = None
     is_locked: bool
     unlock_time: datetime
     status: str
