@@ -25,6 +25,7 @@ class CheckInResponse(BaseModel):
     collaboration_rating: Optional[str]
     energy_level: Optional[int]
     submitted_at: datetime
+    is_late: bool = False
     analysis: Optional[Dict[str, Any]]
     sentiment_score: Optional[float]
     risk_contribution: Optional[float]

@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
+from datetime import datetime
 from pydantic import BaseModel
 
 from app.database import get_db
@@ -21,6 +22,11 @@ class MilestoneUpdate(BaseModel):
     milestone_2_score: Optional[float] = None
     milestone_3_score: Optional[float] = None
     final_score: Optional[float] = None
+
+
+class EmergencyAbsenceRequest(BaseModel):
+    reason: str
+    until: datetime  # When emergency absence expires
 
 router = APIRouter(prefix="/fellows")
 
@@ -181,3 +187,56 @@ async def update_milestones(
         "milestone_3_score": fellow.milestone_3_score,
         "final_score": fellow.final_score,
     }
+
+
+@router.post("/{fellow_id}/emergency-absence")
+async def set_emergency_absence(
+    fellow_id: UUID,
+    data: EmergencyAbsenceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set emergency absence for a fellow. Pauses risk assessment and marks future absences as approved."""
+    result = await db.execute(
+        select(Fellow).options(selectinload(Fellow.applicant)).where(Fellow.id == fellow_id)
+    )
+    fellow = result.scalar_one_or_none()
+    if not fellow:
+        raise HTTPException(status_code=404, detail="Fellow not found")
+
+    fellow.emergency_absence_until = data.until
+    fellow.emergency_absence_reason = data.reason
+
+    await db.commit()
+
+    name = fellow.applicant.name if fellow.applicant else "Unknown"
+    return {
+        "status": "active",
+        "fellow_id": fellow.id,
+        "fellow_name": name,
+        "reason": data.reason,
+        "until": data.until.isoformat(),
+        "message": f"Emergency absence set for {name} until {data.until.strftime('%b %d, %Y')}. Risk assessment paused.",
+    }
+
+
+@router.delete("/{fellow_id}/emergency-absence")
+async def clear_emergency_absence(
+    fellow_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Clear emergency absence for a fellow. Resumes risk assessment."""
+    result = await db.execute(
+        select(Fellow).where(Fellow.id == fellow_id)
+    )
+    fellow = result.scalar_one_or_none()
+    if not fellow:
+        raise HTTPException(status_code=404, detail="Fellow not found")
+
+    fellow.emergency_absence_until = None
+    fellow.emergency_absence_reason = None
+
+    await db.commit()
+
+    return {"status": "cleared", "fellow_id": fellow.id}

@@ -39,6 +39,7 @@ class CheckIn(Base):
     collaboration_rating: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     energy_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    is_late: Mapped[bool] = mapped_column(default=False)
 
     # AI Analysis Results
     analysis: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)

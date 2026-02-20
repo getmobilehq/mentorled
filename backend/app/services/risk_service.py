@@ -72,6 +72,19 @@ class RiskDetectionService:
         if not fellow:
             raise ValueError(f"Fellow {fellow_id} not found")
 
+        # Skip fellows with active emergency absence
+        if fellow.emergency_absence_until and fellow.emergency_absence_until > datetime.utcnow():
+            return {
+                "risk_score": None,
+                "risk_level": "paused",
+                "signals": {},
+                "concerns": [],
+                "patterns": [],
+                "recommended_action": "emergency_absence_active",
+                "emergency_absence_until": fellow.emergency_absence_until.isoformat(),
+                "emergency_absence_reason": fellow.emergency_absence_reason,
+            }
+
         # Gather all 7 signals
         signals = {}
         signals["attendance_score"] = await self._calc_attendance_signal(fellow)
@@ -401,6 +414,16 @@ class RiskDetectionService:
         errors = []
 
         for fellow in fellows:
+            # Skip fellows with active emergency absence
+            if fellow.emergency_absence_until and fellow.emergency_absence_until > datetime.utcnow():
+                results.append({
+                    "fellow_id": str(fellow.id),
+                    "name": fellow.applicant.name if fellow.applicant else "Unknown",
+                    "risk_level": "paused",
+                    "risk_score": None,
+                })
+                continue
+
             try:
                 assessment_data = await self.assess_fellow_risk(fellow.id, week)
 

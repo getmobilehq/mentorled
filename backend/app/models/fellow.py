@@ -44,6 +44,8 @@ class Fellow(Base):
     mentor_flags: Mapped[int] = mapped_column(Integer, default=0)
     started_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     ended_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    emergency_absence_until: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    emergency_absence_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(),

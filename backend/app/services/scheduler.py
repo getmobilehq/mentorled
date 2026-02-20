@@ -19,6 +19,9 @@ from app.utils.email import email_service
 from app.services.risk_service import RiskDetectionService
 from app.models.meeting import Meeting, MeetingStatus
 from app.models.attendance import Attendance, AttendanceStatus
+from app.models.sprint import Sprint, SprintStatus
+from app.models.risk_assessment import RiskAssessment
+from app.models.warning import Warning, WarningLevel
 from app.services.event_service import event_publisher
 
 logger = logging.getLogger(__name__)
@@ -102,6 +105,33 @@ class SchedulerService:
             CronTrigger(second=0),  # Every minute at :00 seconds
             id="manage_meeting_locks",
             name="Meeting Lock Management",
+            replace_existing=True
+        )
+
+        # Daily 6 PM: Detect attendance patterns (3+ absences, 5+ late, declining trend)
+        self.scheduler.add_job(
+            self.detect_attendance_patterns,
+            CronTrigger(hour=18, minute=30),
+            id="detect_attendance_patterns",
+            name="Attendance Pattern Detection",
+            replace_existing=True
+        )
+
+        # Daily 11 AM: Auto-escalate warnings for persistent at-risk fellows
+        self.scheduler.add_job(
+            self.auto_escalate_warnings,
+            CronTrigger(hour=11, minute=0),
+            id="auto_escalate_warnings",
+            name="Auto-Escalate Warnings",
+            replace_existing=True
+        )
+
+        # Daily 7 AM: Flag low sprint completion scores
+        self.scheduler.add_job(
+            self.flag_sprint_completion,
+            CronTrigger(hour=7, minute=0),
+            id="flag_sprint_completion",
+            name="Sprint Completion Flagging",
             replace_existing=True
         )
 
@@ -559,12 +589,19 @@ class SchedulerService:
                         if existing.scalar_one_or_none():
                             continue
 
-                        # Mark absent
-                        db.add(Attendance(
-                            meeting_id=meeting.id,
-                            fellow_id=fellow.id,
-                            status=AttendanceStatus.ABSENT,
-                        ))
+                        # Fellows with active emergency absence get approved_absence
+                        if fellow.emergency_absence_until and fellow.emergency_absence_until > meeting.scheduled_at:
+                            db.add(Attendance(
+                                meeting_id=meeting.id,
+                                fellow_id=fellow.id,
+                                status=AttendanceStatus.APPROVED_ABSENCE,
+                            ))
+                        else:
+                            db.add(Attendance(
+                                meeting_id=meeting.id,
+                                fellow_id=fellow.id,
+                                status=AttendanceStatus.ABSENT,
+                            ))
                         total_absent += 1
 
                     # Mark meeting completed
@@ -575,6 +612,289 @@ class SchedulerService:
 
             except Exception as e:
                 logger.error(f"Error in auto_mark_absent_meetings: {str(e)}")
+
+
+    async def detect_attendance_patterns(self):
+        """
+        Daily 6:30 PM: Detect concerning attendance patterns for active fellows.
+        - 3+ absences in last 2 weeks → HIGH severity alert
+        - 5+ late/very_late in last 2 weeks → MEDIUM severity alert
+        - Declining attendance trend (last 2 weeks worse than prior 2 weeks) → MEDIUM alert
+        Creates in-app notifications for ops/mentors.
+        """
+        logger.info("Running attendance pattern detection...")
+
+        async with AsyncSessionLocal() as db:
+            try:
+                from sqlalchemy.orm import selectinload
+                from sqlalchemy import func as sqlfunc
+                from app.services.notification_service import create_notification
+
+                two_weeks_ago = datetime.utcnow() - timedelta(days=14)
+                four_weeks_ago = datetime.utcnow() - timedelta(days=28)
+
+                result = await db.execute(
+                    select(Fellow)
+                    .options(selectinload(Fellow.applicant))
+                    .where(Fellow.status == 'active')
+                )
+                fellows = result.scalars().all()
+
+                alerts_created = 0
+                for fellow in fellows:
+                    # Skip fellows with active emergency absence
+                    if fellow.emergency_absence_until and fellow.emergency_absence_until > datetime.utcnow():
+                        continue
+
+                    name = fellow.applicant.name if fellow.applicant else "Unknown"
+
+                    # Get attendance in last 2 weeks
+                    att_result = await db.execute(
+                        select(Attendance)
+                        .join(Meeting)
+                        .where(Attendance.fellow_id == fellow.id)
+                        .where(Meeting.scheduled_at >= two_weeks_ago)
+                    )
+                    recent = att_result.scalars().all()
+
+                    absences = sum(1 for a in recent if (a.status.value if hasattr(a.status, 'value') else a.status) == 'absent')
+                    lates = sum(1 for a in recent if (a.status.value if hasattr(a.status, 'value') else a.status) in ('late', 'very_late'))
+
+                    # 3+ absences → HIGH
+                    if absences >= 3:
+                        await create_notification(
+                            db, type="risk_alert",
+                            title=f"HIGH: {name} — {absences} absences in 2 weeks",
+                            message=f"{name} has {absences} absences in the last 14 days. Immediate review recommended.",
+                            action_url="/risk",
+                        )
+                        alerts_created += 1
+
+                    # 5+ late → MEDIUM
+                    if lates >= 5:
+                        await create_notification(
+                            db, type="risk_alert",
+                            title=f"MEDIUM: {name} — {lates} late arrivals in 2 weeks",
+                            message=f"{name} has been late {lates} times in the last 14 days.",
+                            action_url="/risk",
+                        )
+                        alerts_created += 1
+
+                    # Declining trend: compare last 2 weeks vs prior 2 weeks
+                    prior_result = await db.execute(
+                        select(Attendance)
+                        .join(Meeting)
+                        .where(Attendance.fellow_id == fellow.id)
+                        .where(Meeting.scheduled_at >= four_weeks_ago)
+                        .where(Meeting.scheduled_at < two_weeks_ago)
+                    )
+                    prior = prior_result.scalars().all()
+
+                    if len(recent) >= 3 and len(prior) >= 3:
+                        score_map = {'present': 1.0, 'late': 0.8, 'very_late': 0.5, 'absent': 0.0, 'approved_absence': 0.7}
+                        recent_avg = sum(score_map.get(a.status.value if hasattr(a.status, 'value') else a.status, 0.5) for a in recent) / len(recent)
+                        prior_avg = sum(score_map.get(a.status.value if hasattr(a.status, 'value') else a.status, 0.5) for a in prior) / len(prior)
+
+                        if prior_avg - recent_avg > 0.15:
+                            await create_notification(
+                                db, type="risk_alert",
+                                title=f"MEDIUM: {name} — declining attendance trend",
+                                message=f"Attendance score dropped from {prior_avg:.0%} to {recent_avg:.0%} over the last 2 weeks.",
+                                action_url="/risk",
+                            )
+                            alerts_created += 1
+
+                logger.info(f"Attendance pattern detection: {alerts_created} alert(s) created for {len(fellows)} fellows")
+
+            except Exception as e:
+                logger.error(f"Error in detect_attendance_patterns: {str(e)}")
+
+    async def auto_escalate_warnings(self):
+        """
+        Daily 11 AM: Auto-generate warning drafts for persistent at-risk fellows.
+        - 2+ consecutive weeks AT_RISK → auto-generate first warning draft
+        - 2+ consecutive weeks CRITICAL → auto-generate final warning draft
+        Only creates a warning if one doesn't already exist for that level.
+        """
+        logger.info("Running auto-escalation for persistent at-risk fellows...")
+
+        async with AsyncSessionLocal() as db:
+            try:
+                from sqlalchemy.orm import selectinload
+                from app.services.notification_service import create_notification
+
+                result = await db.execute(
+                    select(Fellow)
+                    .options(selectinload(Fellow.applicant))
+                    .where(Fellow.current_risk_level.in_(["at_risk", "critical"]))
+                )
+                fellows = result.scalars().all()
+
+                warnings_created = 0
+                for fellow in fellows:
+                    # Skip fellows with active emergency absence
+                    if fellow.emergency_absence_until and fellow.emergency_absence_until > datetime.utcnow():
+                        continue
+
+                    name = fellow.applicant.name if fellow.applicant else "Unknown"
+
+                    # Get last 3 risk assessments ordered by week
+                    risk_result = await db.execute(
+                        select(RiskAssessment)
+                        .where(RiskAssessment.fellow_id == fellow.id)
+                        .order_by(RiskAssessment.week.desc())
+                        .limit(3)
+                    )
+                    assessments = risk_result.scalars().all()
+
+                    if len(assessments) < 2:
+                        continue
+
+                    # Check for 2+ consecutive weeks at same level
+                    levels = [a.risk_level if isinstance(a.risk_level, str) else a.risk_level.value for a in assessments[:2]]
+
+                    if all(l == "at_risk" for l in levels):
+                        target_level = WarningLevel.FIRST
+                    elif all(l == "critical" for l in levels):
+                        target_level = WarningLevel.FINAL
+                    else:
+                        continue
+
+                    # Check if warning at this level already exists
+                    existing = await db.execute(
+                        select(Warning.id)
+                        .where(Warning.fellow_id == fellow.id)
+                        .where(Warning.level == target_level)
+                    )
+                    if existing.scalar_one_or_none():
+                        continue
+
+                    # Create warning draft
+                    if target_level == WarningLevel.FIRST:
+                        concerns = [
+                            f"Fellow has been at-risk for 2+ consecutive weeks",
+                            f"Current risk level: {fellow.current_risk_level}",
+                        ]
+                        requirements = [
+                            "Attend all scheduled meetings for the next 2 weeks",
+                            "Submit all check-ins on time",
+                            "Meet with mentor to discuss improvement plan",
+                        ]
+                        draft = f"Dear {name},\n\nThis is a first warning regarding your performance in the fellowship program. You have been assessed as at-risk for two consecutive weeks. Please review the requirements below and take immediate action to improve.\n\nRegards,\nMentorLed Team"
+                    else:
+                        concerns = [
+                            f"Fellow has been critical for 2+ consecutive weeks",
+                            f"Prior first warning was issued",
+                        ]
+                        requirements = [
+                            "Mandatory daily check-ins for the next week",
+                            "Attend all meetings — zero absences tolerated",
+                            "Submit improvement plan within 48 hours",
+                        ]
+                        draft = f"Dear {name},\n\nThis is a final warning regarding your continued critical-level performance. Failure to meet the requirements below may result in removal from the program.\n\nRegards,\nMentorLed Team"
+
+                    warning = Warning(
+                        fellow_id=fellow.id,
+                        level=target_level,
+                        concerns=concerns,
+                        requirements=requirements,
+                        draft_message=draft,
+                        review_deadline=datetime.utcnow() + timedelta(days=7),
+                    )
+                    db.add(warning)
+                    warnings_created += 1
+
+                    await create_notification(
+                        db, type="warning_issued",
+                        title=f"Auto-generated {target_level.value} warning for {name}",
+                        message=f"A {target_level.value} warning draft has been created for {name} due to {len(levels)} consecutive weeks at {levels[0]} level. Review and approve before issuing.",
+                        action_url="/delivery",
+                    )
+
+                if warnings_created:
+                    await db.commit()
+                logger.info(f"Auto-escalation: {warnings_created} warning draft(s) created for {len(fellows)} at-risk fellows")
+
+            except Exception as e:
+                logger.error(f"Error in auto_escalate_warnings: {str(e)}")
+
+    async def flag_sprint_completion(self):
+        """
+        Daily 7 AM: Flag sprints with low completion scores.
+        - Any completed sprint < 40% → HIGH alert (immediate review)
+        - 2 consecutive completed sprints < 60% for same team → HIGH alert (mentor intervention)
+        """
+        logger.info("Running sprint completion flagging...")
+
+        async with AsyncSessionLocal() as db:
+            try:
+                from app.services.notification_service import create_notification
+                from sqlalchemy.orm import selectinload
+
+                # Get recently completed sprints (last 7 days)
+                week_ago = datetime.utcnow() - timedelta(days=7)
+                result = await db.execute(
+                    select(Sprint)
+                    .options(selectinload(Sprint.team))
+                    .where(Sprint.status == SprintStatus.COMPLETED)
+                    .where(Sprint.updated_at >= week_ago)
+                )
+                recent_sprints = result.scalars().all()
+
+                alerts = 0
+                for sprint in recent_sprints:
+                    team_name = sprint.team.name if sprint.team else "Unknown Team"
+                    score = float(sprint.completion_score or 0)
+
+                    # Sprint < 40% → HIGH
+                    if score < 40:
+                        await create_notification(
+                            db, type="risk_alert",
+                            title=f"HIGH: {team_name} Sprint {sprint.sprint_number} — {score:.0f}% completion",
+                            message=f"Sprint {sprint.sprint_number} for {team_name} completed with only {score:.0f}%. Immediate review needed.",
+                            action_url="/sprints",
+                        )
+                        alerts += 1
+
+                # Check for 2 consecutive low sprints per team
+                result = await db.execute(
+                    select(Sprint)
+                    .options(selectinload(Sprint.team))
+                    .where(Sprint.status == SprintStatus.COMPLETED)
+                    .order_by(Sprint.team_id, Sprint.sprint_number.desc())
+                )
+                all_completed = result.scalars().all()
+
+                # Group by team
+                teams: dict[str, list] = {}
+                for s in all_completed:
+                    tid = str(s.team_id)
+                    if tid not in teams:
+                        teams[tid] = []
+                    teams[tid].append(s)
+
+                for tid, sprints in teams.items():
+                    if len(sprints) < 2:
+                        continue
+                    # Check last 2 completed sprints
+                    last_two = sorted(sprints, key=lambda s: s.sprint_number, reverse=True)[:2]
+                    scores = [float(s.completion_score or 0) for s in last_two]
+                    if all(sc < 60 for sc in scores):
+                        team_name = last_two[0].team.name if last_two[0].team else "Unknown Team"
+                        await create_notification(
+                            db, type="risk_alert",
+                            title=f"HIGH: {team_name} — 2 consecutive sprints below 60%",
+                            message=f"Sprints {last_two[1].sprint_number} ({scores[1]:.0f}%) and {last_two[0].sprint_number} ({scores[0]:.0f}%) both below 60%. Mentor intervention recommended.",
+                            action_url="/sprints",
+                        )
+                        alerts += 1
+
+                if alerts:
+                    await db.commit()
+                logger.info(f"Sprint completion flagging: {alerts} alert(s) created")
+
+            except Exception as e:
+                logger.error(f"Error in flag_sprint_completion: {str(e)}")
 
 
 # Global scheduler instance

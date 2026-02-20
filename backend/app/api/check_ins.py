@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.models.check_in import CheckIn
@@ -30,12 +30,36 @@ async def create_check_in(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new check-in submission."""
+    """
+    Create a new check-in submission.
+    Deadline: Sunday 11:59 PM of the check-in week.
+    Grace period: Late submissions accepted up to 48 hours past deadline (marked as late).
+    """
     # Verify fellow exists
-    result = await db.execute(select(Fellow).filter(Fellow.id == check_in.fellow_id))
+    result = await db.execute(
+        select(Fellow).options(selectinload(Fellow.cohort)).filter(Fellow.id == check_in.fellow_id)
+    )
     fellow = result.scalar_one_or_none()
     if not fellow:
         raise HTTPException(status_code=404, detail="Fellow not found")
+
+    # Calculate if submission is late based on cohort start + week number
+    is_late = False
+    if fellow.cohort and fellow.cohort.start_date:
+        from datetime import time as dtime
+        cohort_start = fellow.cohort.start_date
+        # Week N deadline = cohort_start + (N * 7 days) - 1 second (Sunday 11:59 PM)
+        week_end = datetime.combine(
+            cohort_start + timedelta(weeks=check_in.week), dtime(0, 0)
+        )  # Monday 00:00 of next week = deadline
+        grace_end = week_end + timedelta(hours=48)
+        now = datetime.utcnow()
+        if now > grace_end:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Check-in submission window has closed. Deadline was {week_end.strftime('%b %d')} + 48h grace period."
+            )
+        is_late = now > week_end
 
     # Create check-in
     db_check_in = CheckIn(
@@ -48,6 +72,7 @@ async def create_check_in(
         self_assessment=check_in.self_assessment,
         collaboration_rating=check_in.collaboration_rating,
         energy_level=check_in.energy_level,
+        is_late=is_late,
     )
 
     db.add(db_check_in)
