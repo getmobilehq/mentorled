@@ -16,6 +16,7 @@ from app.models.user import User, UserRole
 from app.schemas.check_in import RiskAssessmentResponse
 from app.middleware.auth import get_current_user, require_role
 from app.services.risk_service import RiskDetectionService
+from app.services.notification_service import create_notification
 
 router = APIRouter(prefix="/risk")
 
@@ -79,6 +80,16 @@ async def assess_fellow_risk(
 
     await db.commit()
     await db.refresh(db_assessment)
+
+    # Notify on high-risk assessments
+    if assessment_data['risk_level'] in ('at_risk', 'critical'):
+        await create_notification(
+            db,
+            type="risk_alert",
+            title=f"Risk Alert: Fellow {fellow_id}",
+            message=f"Fellow assessed as {assessment_data['risk_level']} (score: {assessment_data['risk_score']:.1f})",
+            action_url="/risk",
+        )
 
     return db_assessment
 

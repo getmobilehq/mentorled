@@ -19,6 +19,7 @@ from app.models.evaluation import ApplicationEvaluation
 from app.agents.screening_agent import screening_agent
 from app.agents.delivery_agent import DeliveryAgent
 from app.utils.slack import slack_notifier
+from app.services.notification_service import create_notification
 from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix="/bulk")
@@ -141,6 +142,14 @@ async def bulk_update_status(
                 role=applicant.role or "Unknown",
                 score=0.0,
             )
+
+    await create_notification(
+        db,
+        type="batch_complete",
+        title=f"Bulk Status Update Complete",
+        message=f"Updated {len(applicants)} applicant(s) to '{request.new_status}'",
+        action_url="/applicants",
+    )
 
     return {
         "message": f"Updated status for {len(applicants)} applicants",

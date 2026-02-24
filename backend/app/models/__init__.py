@@ -23,6 +23,9 @@ from app.models.meeting import Meeting
 from app.models.attendance import Attendance
 from app.models.retrospective import Retrospective
 from app.models.notification import Notification
+from app.models.notification_preference import NotificationPreference
+from app.models.peer_feedback import PeerFeedback
+from app.models.mentor_note import MentorNote
 from app.models.absence_request import AbsenceRequest
 
 __all__ = [
@@ -51,5 +54,8 @@ __all__ = [
     "Attendance",
     "Retrospective",
     "Notification",
+    "NotificationPreference",
+    "PeerFeedback",
+    "MentorNote",
     "AbsenceRequest",
 ]

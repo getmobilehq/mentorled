@@ -436,7 +436,7 @@ export const retrospectivesAPI = {
 };
 
 export const notificationsAPI = {
-  list: (params?: { unread_only?: boolean; limit?: number }) =>
+  list: (params?: { unread_only?: boolean; limit?: number; offset?: number; type?: string; search?: string }) =>
     api.get('/api/notifications/', { params }),
   unreadCount: () =>
     api.get('/api/notifications/unread-count'),
@@ -444,6 +444,75 @@ export const notificationsAPI = {
     api.post('/api/notifications/mark-read', { notification_ids: notificationIds }),
   markAllRead: () =>
     api.post('/api/notifications/mark-all-read'),
+  bulkDelete: (notificationIds: string[]) =>
+    api.delete('/api/notifications/bulk-delete', { data: { notification_ids: notificationIds } }),
+  getPreferences: () =>
+    api.get('/api/notifications/preferences'),
+  updatePreferences: (preferences: { notification_type: string; in_app_enabled: boolean; email_enabled: boolean }[]) =>
+    api.put('/api/notifications/preferences', { preferences }),
+  broadcast: (data: { title: string; message: string; action_url?: string }) =>
+    api.post('/api/notifications/broadcast', data),
+};
+
+export const aiAPI = {
+  summarizeMeeting: (meetingId: string) =>
+    api.post(`/api/ai/meetings/${meetingId}/summarize`),
+  retroInsights: (retroId: string) =>
+    api.post(`/api/ai/retrospectives/${retroId}/insights`),
+  predictRisk: (fellowId: string) =>
+    api.get(`/api/ai/risk/predict/${fellowId}`),
+};
+
+export const reportsAPI = {
+  stakeholder: (cohortId: string) =>
+    api.get(`/api/reports/stakeholder/${cohortId}`),
+  downloadCsv: (cohortId: string) =>
+    api.get(`/api/reports/cohort/${cohortId}/csv`, { responseType: 'blob' }),
+  downloadPdf: (cohortId: string) =>
+    api.get(`/api/reports/cohort/${cohortId}/pdf`, { responseType: 'blob' }),
+};
+
+export const mentorNotesAPI = {
+  create: (data: { fellow_id: string; content: string; action_items?: string[]; mood?: string; next_meeting_date?: string }) =>
+    api.post('/api/mentors/notes', data),
+  getForFellow: (fellowId: string) =>
+    api.get(`/api/mentors/notes/fellow/${fellowId}`),
+  getMy: () =>
+    api.get('/api/mentors/notes/my'),
+};
+
+export const peerFeedbackAPI = {
+  submit: (data: {
+    giver_id: string; receiver_id: string; sprint_id?: string;
+    strengths: string; areas_to_improve: string;
+    collaboration_rating: number; communication_rating: number;
+    technical_rating: number; overall_rating: number; anonymous?: boolean;
+  }) => api.post('/api/peer-feedback/', data),
+  received: (fellowId: string) =>
+    api.get(`/api/peer-feedback/fellow/${fellowId}/received`),
+  given: (fellowId: string) =>
+    api.get(`/api/peer-feedback/fellow/${fellowId}/given`),
+  summary: (fellowId: string) =>
+    api.get(`/api/peer-feedback/fellow/${fellowId}/summary`),
+};
+
+export const certificatesAPI = {
+  download: (fellowId: string) =>
+    api.get(`/api/certificates/${fellowId}`, { responseType: 'blob' }),
+};
+
+export const auditAPI = {
+  list: (params?: { action?: string; entity_type?: string; actor_type?: string; search?: string; days?: number; limit?: number; offset?: number }) =>
+    api.get('/api/audit-logs', { params }),
+  getActions: () =>
+    api.get('/api/audit-logs/actions'),
+  getEntityTypes: () =>
+    api.get('/api/audit-logs/entity-types'),
+};
+
+export const activityAPI = {
+  feed: (limit?: number) =>
+    api.get('/api/activity/feed', { params: { limit } }),
 };
 
 export const healthAPI = {

@@ -2,7 +2,7 @@ from sqlalchemy import (
     String, Integer, Text, ForeignKey, func
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSON
 from datetime import datetime
 from uuid import UUID, uuid4
 from typing import Optional, List
@@ -26,6 +26,7 @@ class Retrospective(Base):
         ForeignKey("fellows.id"), nullable=True
     )
     submitted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    ai_insights: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Relationships

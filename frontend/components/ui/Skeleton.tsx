@@ -8,7 +8,7 @@ interface SkeletonProps {
 
 export const Skeleton: React.FC<SkeletonProps> = ({ className = '' }) => {
   return (
-    <div className={`animate-pulse bg-gray-200 rounded ${className}`}></div>
+    <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className}`}></div>
   );
 };
 
@@ -38,7 +38,7 @@ export const TableSkeleton: React.FC<{ rows?: number; columns?: number }> = ({
 
 export const CardSkeleton: React.FC = () => {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-4">
       <Skeleton className="h-6 w-1/3" />
       <Skeleton className="h-4 w-full" />
       <Skeleton className="h-4 w-5/6" />
@@ -52,7 +52,7 @@ export const CardSkeleton: React.FC = () => {
 
 export const StatCardSkeleton: React.FC = () => {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
       <div className="flex items-center">
         <Skeleton className="h-12 w-12 rounded-lg" />
         <div className="ml-4 flex-1 space-y-2">
@@ -72,7 +72,7 @@ export const PageSkeleton: React.FC = () => {
           <StatCardSkeleton key={i} />
         ))}
       </div>
-      <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 space-y-4">
         <Skeleton className="h-6 w-48" />
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (

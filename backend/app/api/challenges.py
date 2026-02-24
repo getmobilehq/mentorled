@@ -26,6 +26,7 @@ from app.agents.challenge_generator import challenge_generator
 from app.utils.email import email_service
 from app.services.auto_evaluate import run_auto_evaluation
 from app.services.applicant_status import update_applicant_status_on_event
+from app.services.notification_service import create_notification
 
 router = APIRouter(prefix="/challenges")
 
@@ -519,6 +520,15 @@ async def public_submit(
         on_time=on_time,
     )
 
+    # Create in-app notification for new submission
+    await create_notification(
+        db,
+        type="evaluation",
+        title=f"New Submission: {challenge.title}",
+        message=f"{submission.name} ({submission.email}) submitted for '{challenge.title}'",
+        action_url="/challenges",
+    )
+
     # Auto-evaluate if enabled on this challenge
     if challenge.auto_evaluate:
         background_tasks.add_task(run_auto_evaluation, new_submission.id)
@@ -637,6 +647,14 @@ async def update_challenge_status(
                 duration_hours=challenge.duration_hours,
                 requirements=challenge.requirements or [],
             )
+
+        await create_notification(
+            db,
+            type="evaluation",
+            title=f"Challenge Activated: {challenge.title}",
+            message=f"Challenge '{challenge.title}' is now active. {len(applicants)} applicants notified.",
+            action_url="/challenges",
+        )
 
     data = await _enrich_challenge_response(challenge, db)
     return ChallengeResponse(**data)

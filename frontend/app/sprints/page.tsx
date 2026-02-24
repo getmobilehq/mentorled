@@ -11,12 +11,12 @@ import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
 import {
-  teamsAPI, sprintsAPI, meetingsAPI, attendanceAPI, retrospectivesAPI, cohortsAPI, fellowsAPI,
+  teamsAPI, sprintsAPI, meetingsAPI, attendanceAPI, retrospectivesAPI, cohortsAPI, fellowsAPI, aiAPI,
 } from '@/lib/api';
 import {
   Repeat, Target, Calendar, Clock, CheckCircle, Users,
   ArrowRight, ExternalLink, Plus, Pencil, Trash2, AlertTriangle,
-  ThumbsUp, ThumbsDown, Lightbulb, Star, Zap,
+  ThumbsUp, ThumbsDown, Lightbulb, Star, Zap, Brain,
 } from 'lucide-react';
 import type {
   Team, Sprint, SprintObjective, Meeting, Retrospective,
@@ -122,6 +122,12 @@ export default function SprintBoardPage() {
     sprint_rating: 7,
   });
   const [savingRetro, setSavingRetro] = useState(false);
+
+  // AI summarize / insights
+  const [summarizingMeeting, setSummarizingMeeting] = useState<string | null>(null);
+  const [meetingSummary, setMeetingSummary] = useState<any>(null);
+  const [generatingInsights, setGeneratingInsights] = useState(false);
+  const [retroInsights, setRetroInsights] = useState<any>(null);
 
   // Sprint goal edit
   const [editingGoal, setEditingGoal] = useState(false);
@@ -493,6 +499,33 @@ export default function SprintBoardPage() {
       console.error('Error fetching meeting detail:', error);
     } finally {
       setLoadingMeetingDetail(false);
+    }
+  };
+
+  const handleAISummarize = async (meetingId: string) => {
+    setSummarizingMeeting(meetingId);
+    try {
+      const res = await aiAPI.summarizeMeeting(meetingId);
+      setMeetingSummary({ meetingId, ...res.data });
+      toast('Meeting summarized by AI.', 'success');
+    } catch (err: any) {
+      toast(err.response?.data?.detail || 'Failed to generate AI summary.', 'error');
+    } finally {
+      setSummarizingMeeting(null);
+    }
+  };
+
+  const handleGenerateInsights = async () => {
+    if (!retrospective) return;
+    setGeneratingInsights(true);
+    try {
+      const res = await aiAPI.retroInsights(retrospective.id);
+      setRetroInsights(res.data);
+      toast('Retrospective insights generated.', 'success');
+    } catch (err: any) {
+      toast(err.response?.data?.detail || 'Failed to generate insights.', 'error');
+    } finally {
+      setGeneratingInsights(false);
     }
   };
 
@@ -1623,6 +1656,78 @@ export default function SprintBoardPage() {
                           </div>
                         </div>
 
+                        {/* AI Insights */}
+                        <div className="border-t pt-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                              <Brain className="h-4 w-4 text-purple-600" /> AI Insights
+                            </h4>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={handleGenerateInsights}
+                              disabled={generatingInsights}
+                            >
+                              <Brain className="mr-1 h-3 w-3" />
+                              {generatingInsights ? 'Generating...' : retroInsights ? 'Regenerate' : 'Generate Insights'}
+                            </Button>
+                          </div>
+                          {retroInsights ? (
+                            <div className="rounded-lg bg-purple-50 border border-purple-200 p-4 space-y-3">
+                              {retroInsights.summary && (
+                                <div>
+                                  <p className="text-sm font-medium text-purple-900">Summary</p>
+                                  <p className="text-sm text-purple-700 mt-1">{retroInsights.summary}</p>
+                                </div>
+                              )}
+                              {retroInsights.themes && retroInsights.themes.length > 0 && (
+                                <div>
+                                  <p className="text-sm font-medium text-purple-900">Themes</p>
+                                  <div className="flex flex-wrap gap-2 mt-1">
+                                    {retroInsights.themes.map((theme: string, i: number) => (
+                                      <Badge key={i} variant="secondary">{theme}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {retroInsights.recommended_actions && retroInsights.recommended_actions.length > 0 && (
+                                <div>
+                                  <p className="text-sm font-medium text-purple-900">Recommended Actions</p>
+                                  <ul className="mt-1 space-y-1">
+                                    {retroInsights.recommended_actions.map((action: string, i: number) => (
+                                      <li key={i} className="text-sm text-purple-700 flex items-start gap-2">
+                                        <Target className="h-3 w-3 mt-0.5 flex-shrink-0 text-purple-500" />
+                                        {action}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {retroInsights.team_health_assessment && (
+                                <div>
+                                  <p className="text-sm font-medium text-purple-900">Team Health</p>
+                                  <p className="text-sm text-purple-700 mt-1">{retroInsights.team_health_assessment}</p>
+                                </div>
+                              )}
+                            </div>
+                          ) : retrospective.ai_insights ? (
+                            <div className="rounded-lg bg-purple-50 border border-purple-200 p-4 space-y-3">
+                              {retrospective.ai_insights.summary && (
+                                <p className="text-sm text-purple-700">{retrospective.ai_insights.summary}</p>
+                              )}
+                              {(retrospective.ai_insights.themes?.length ?? 0) > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                  {retrospective.ai_insights.themes!.map((t: string, i: number) => (
+                                    <Badge key={i} variant="secondary">{t}</Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-400">No AI insights yet. Click &quot;Generate Insights&quot; to analyze this retrospective.</p>
+                          )}
+                        </div>
+
                         {retrospective.submitted_at && (
                           <p className="text-xs text-gray-400">
                             Submitted {formatDateTime(retrospective.submitted_at)}
@@ -1695,6 +1800,86 @@ export default function SprintBoardPage() {
                       )}
                     </p>
                   </div>
+                </div>
+              )}
+
+              {/* AI Summary */}
+              {meetingDetail.status === 'completed' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                      <Brain className="h-4 w-4 text-purple-600" /> AI Summary
+                    </h4>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleAISummarize(meetingDetail.id)}
+                      disabled={summarizingMeeting === meetingDetail.id}
+                    >
+                      <Brain className="mr-1 h-3 w-3" />
+                      {summarizingMeeting === meetingDetail.id ? 'Summarizing...' : meetingSummary?.meetingId === meetingDetail.id ? 'Re-summarize' : 'AI Summarize'}
+                    </Button>
+                  </div>
+                  {meetingSummary?.meetingId === meetingDetail.id ? (
+                    <div className="rounded-lg bg-purple-50 border border-purple-200 p-4 space-y-3">
+                      {meetingSummary.summary && (
+                        <div>
+                          <p className="text-sm font-medium text-purple-900">Summary</p>
+                          <p className="text-sm text-purple-700 mt-1">{meetingSummary.summary}</p>
+                        </div>
+                      )}
+                      {meetingSummary.key_points && meetingSummary.key_points.length > 0 && (
+                        <div>
+                          <p className="text-sm font-medium text-purple-900">Key Points</p>
+                          <ul className="mt-1 space-y-1">
+                            {meetingSummary.key_points.map((point: string, i: number) => (
+                              <li key={i} className="text-sm text-purple-700 flex items-start gap-2">
+                                <CheckCircle className="h-3 w-3 mt-0.5 flex-shrink-0 text-purple-500" />
+                                {point}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {meetingSummary.action_items && meetingSummary.action_items.length > 0 && (
+                        <div>
+                          <p className="text-sm font-medium text-purple-900">Action Items</p>
+                          <ul className="mt-1 space-y-1">
+                            {meetingSummary.action_items.map((item: string, i: number) => (
+                              <li key={i} className="text-sm text-purple-700 flex items-start gap-2">
+                                <Target className="h-3 w-3 mt-0.5 flex-shrink-0 text-purple-500" />
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : meetingDetail.ai_summary ? (
+                    <div className="rounded-lg bg-purple-50 border border-purple-200 p-4 space-y-3">
+                      {meetingDetail.ai_summary.summary && (
+                        <div>
+                          <p className="text-sm font-medium text-purple-900">Summary</p>
+                          <p className="text-sm text-purple-700 mt-1">{meetingDetail.ai_summary.summary}</p>
+                        </div>
+                      )}
+                      {meetingDetail.ai_summary.key_points?.length > 0 && (
+                        <div>
+                          <p className="text-sm font-medium text-purple-900">Key Points</p>
+                          <ul className="mt-1 space-y-1">
+                            {meetingDetail.ai_summary.key_points.map((point: string, i: number) => (
+                              <li key={i} className="text-sm text-purple-700 flex items-start gap-2">
+                                <CheckCircle className="h-3 w-3 mt-0.5 flex-shrink-0 text-purple-500" />
+                                {point}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400">No AI summary yet. Click &quot;AI Summarize&quot; to generate one.</p>
+                  )}
                 </div>
               )}
 

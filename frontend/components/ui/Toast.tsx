@@ -33,10 +33,10 @@ const ICONS: Record<ToastType, React.ElementType> = {
 };
 
 const COLORS: Record<ToastType, string> = {
-  success: 'bg-green-50 border-green-300 text-green-800',
-  error: 'bg-red-50 border-red-300 text-red-800',
-  warning: 'bg-yellow-50 border-yellow-300 text-yellow-800',
-  info: 'bg-blue-50 border-blue-300 text-blue-800',
+  success: 'bg-green-50 border-green-300 text-green-800 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300',
+  error: 'bg-red-50 border-red-300 text-red-800 dark:bg-red-900/30 dark:border-red-700 dark:text-red-300',
+  warning: 'bg-yellow-50 border-yellow-300 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300',
+  info: 'bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300',
 };
 
 const ICON_COLORS: Record<ToastType, string> = {
@@ -82,16 +82,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {/* Confirm Dialog */}
       {confirmState && (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl border border-gray-200 max-w-sm w-full mx-4 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 max-w-sm w-full mx-4 p-6">
             <div className="flex items-center gap-3 mb-3">
               <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
-              <h3 className="text-lg font-semibold text-gray-900">{confirmState.title}</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{confirmState.title}</h3>
             </div>
-            <p className="text-sm text-gray-600 mb-6">{confirmState.message}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">{confirmState.message}</p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setConfirmState(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors"
               >
                 Cancel
               </button>

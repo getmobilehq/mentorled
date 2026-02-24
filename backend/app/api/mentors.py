@@ -1,10 +1,12 @@
 """Mentor API endpoints."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.orm import selectinload
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
+from pydantic import BaseModel
+from datetime import date
 
 from app.database import get_db
 from app.models.mentor import Mentor
@@ -12,8 +14,17 @@ from app.models.team import Team
 from app.models.fellow import Fellow
 from app.models.sprint import Sprint
 from app.models.attendance import Attendance, AttendanceStatus
+from app.models.mentor_note import MentorNote
 from app.models.user import User
 from app.middleware.auth import get_current_user
+
+
+class MentorNoteCreate(BaseModel):
+    fellow_id: UUID
+    content: str
+    action_items: Optional[List[str]] = None
+    mood: Optional[str] = None
+    next_meeting_date: Optional[date] = None
 
 router = APIRouter(prefix="/mentors")
 
@@ -154,3 +165,88 @@ async def flag_fellow(
         "name": fellow.applicant.name if fellow.applicant else "Unknown",
         "mentor_flags": fellow.mentor_flags,
     }
+
+
+@router.post("/notes")
+async def create_mentor_note(
+    note: MentorNoteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a 1-on-1 meeting note for a fellow."""
+    # Verify fellow exists
+    result = await db.execute(select(Fellow).where(Fellow.id == note.fellow_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Fellow not found")
+
+    new_note = MentorNote(
+        mentor_id=current_user.id,
+        fellow_id=note.fellow_id,
+        content=note.content,
+        action_items=note.action_items,
+        mood=note.mood,
+        next_meeting_date=note.next_meeting_date,
+    )
+    db.add(new_note)
+    await db.commit()
+    await db.refresh(new_note)
+
+    return {"id": str(new_note.id), "status": "created"}
+
+
+@router.get("/notes/fellow/{fellow_id}")
+async def get_fellow_notes(
+    fellow_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get all mentor notes for a fellow."""
+    result = await db.execute(
+        select(MentorNote)
+        .options(selectinload(MentorNote.fellow).selectinload(Fellow.applicant))
+        .where(MentorNote.fellow_id == fellow_id)
+        .order_by(desc(MentorNote.created_at))
+    )
+    notes = result.scalars().all()
+
+    return [
+        {
+            "id": str(n.id),
+            "fellow_name": n.fellow.applicant.name if n.fellow and n.fellow.applicant else "Unknown",
+            "content": n.content,
+            "action_items": n.action_items,
+            "mood": n.mood,
+            "next_meeting_date": n.next_meeting_date.isoformat() if n.next_meeting_date else None,
+            "created_at": n.created_at.isoformat(),
+        }
+        for n in notes
+    ]
+
+
+@router.get("/notes/my")
+async def get_my_notes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get all notes created by the current mentor."""
+    result = await db.execute(
+        select(MentorNote)
+        .options(selectinload(MentorNote.fellow).selectinload(Fellow.applicant))
+        .where(MentorNote.mentor_id == current_user.id)
+        .order_by(desc(MentorNote.created_at))
+    )
+    notes = result.scalars().all()
+
+    return [
+        {
+            "id": str(n.id),
+            "fellow_id": str(n.fellow_id),
+            "fellow_name": n.fellow.applicant.name if n.fellow and n.fellow.applicant else "Unknown",
+            "content": n.content,
+            "action_items": n.action_items,
+            "mood": n.mood,
+            "next_meeting_date": n.next_meeting_date.isoformat() if n.next_meeting_date else None,
+            "created_at": n.created_at.isoformat(),
+        }
+        for n in notes
+    ]

@@ -39,7 +39,7 @@ export default function LoginPage() {
   // Don't render login form if already authenticated or still loading
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
       </div>
     );
@@ -50,8 +50,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-gray-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8 shadow-xl border border-gray-200">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md p-8 shadow-xl border border-gray-200 dark:border-gray-700">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <Image
@@ -62,12 +62,12 @@ export default function LoginPage() {
               priority
             />
           </div>
-          <p className="text-gray-600 font-medium">AI-Ops Platform</p>
+          <p className="text-gray-600 dark:text-gray-400 font-medium">AI-Ops Platform</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label htmlFor="email" className="block text-sm font-semibold text-gray-800 mb-2">
+            <label htmlFor="email" className="block text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
               Email Address
             </label>
             <input
@@ -75,14 +75,14 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors text-gray-900 placeholder-gray-400"
+              className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-800"
               placeholder="you@example.com"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-semibold text-gray-800 mb-2">
+            <label htmlFor="password" className="block text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
               Password
             </label>
             <input
@@ -90,14 +90,14 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors text-gray-900 placeholder-gray-400"
+              className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-800"
               placeholder="Enter your password"
               required
             />
           </div>
 
           {error && (
-            <div className="bg-red-50 border-2 border-red-300 text-red-800 px-4 py-3 rounded-lg text-sm font-medium">
+            <div className="bg-red-50 dark:bg-red-900/30 border-2 border-red-300 dark:border-red-700 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg text-sm font-medium">
               {error}
             </div>
           )}

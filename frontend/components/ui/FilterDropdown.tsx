@@ -61,24 +61,24 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
       >
-        <Filter className="h-4 w-4 text-gray-500" />
-        <span className="text-sm font-medium text-gray-700">{label}:</span>
-        <span className="text-sm text-gray-600">
+        <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}:</span>
+        <span className="text-sm text-gray-600 dark:text-gray-400">
           {selected.length > 0 ? selectedLabels : placeholder}
         </span>
         {selected.length > 0 && (
-          <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+          <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full">
             {selected.length}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-          <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-900">Filter by {label}</span>
+        <div className="absolute left-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+          <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Filter by {label}</span>
             {selected.length > 0 && (
               <button
                 onClick={clearAll}
@@ -95,9 +95,9 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
                 <button
                   key={option.value}
                   onClick={() => toggleOption(option.value)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50"
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
-                  <span className={isSelected ? 'text-blue-600 font-medium' : 'text-gray-700'}>
+                  <span className={isSelected ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-700 dark:text-gray-300'}>
                     {option.label}
                   </span>
                   {isSelected && <Check className="h-4 w-4 text-blue-600" />}

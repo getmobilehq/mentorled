@@ -8,11 +8,11 @@ import { Modal } from '@/components/ui/Modal';
 import { PageSkeleton } from '@/components/ui/Skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { riskAPI, cohortsAPI } from '@/lib/api';
+import { riskAPI, cohortsAPI, aiAPI } from '@/lib/api';
 import {
   AlertTriangle, CheckCircle, TrendingUp, TrendingDown,
   Users, Shield, BarChart3, Activity, Target, Calendar,
-  Clock, Eye, Zap,
+  Clock, Eye, Zap, Brain,
 } from 'lucide-react';
 import type { Cohort, RiskAssessmentDetail, RiskSignals, RiskConcern, RiskAlert } from '@/types';
 
@@ -89,6 +89,8 @@ export default function RiskDashboardPage() {
   const [assessResult, setAssessResult] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<RiskAlert[]>([]);
   const [alertsDismissed, setAlertsDismissed] = useState<Set<string>>(new Set());
+  const [prediction, setPrediction] = useState<any>(null);
+  const [predicting, setPredicting] = useState(false);
 
   useEffect(() => {
     fetchCohorts();
@@ -144,14 +146,31 @@ export default function RiskDashboardPage() {
     setDetailModalOpen(true);
     setLoadingDetail(true);
     setSelectedAction('');
+    setPrediction(null);
     try {
-      const res = await riskAPI.getFellowHistory(fellow.id);
-      setFellowRiskHistory(res.data);
+      const [historyRes, predRes] = await Promise.all([
+        riskAPI.getFellowHistory(fellow.id),
+        aiAPI.predictRisk(fellow.id).catch(() => null),
+      ]);
+      setFellowRiskHistory(historyRes.data);
+      if (predRes) setPrediction(predRes.data);
     } catch (error) {
       console.error('Error fetching risk history:', error);
       setFellowRiskHistory([]);
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const handlePredictRisk = async (fellowId: string) => {
+    setPredicting(true);
+    try {
+      const res = await aiAPI.predictRisk(fellowId);
+      setPrediction(res.data);
+    } catch (err: any) {
+      console.error('Error predicting risk:', err);
+    } finally {
+      setPredicting(false);
     }
   };
 
@@ -553,6 +572,63 @@ export default function RiskDashboardPage() {
                     <p className="text-3xl font-bold mt-1">{Math.round(selectedFellow.risk_score * 100)}<span className="text-sm text-gray-500">/100</span></p>
                   </div>
                 </div>
+              </div>
+
+              {/* AI Prediction */}
+              <div className="rounded-lg bg-purple-50 border border-purple-200 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-purple-900 flex items-center gap-2">
+                    <Brain className="h-4 w-4" /> AI Risk Prediction
+                  </h4>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handlePredictRisk(selectedFellow.id)}
+                    disabled={predicting}
+                  >
+                    {predicting ? 'Predicting...' : prediction ? 'Refresh' : 'Predict'}
+                  </Button>
+                </div>
+                {prediction ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-purple-700">Predicted Level:</span>
+                      <Badge variant={RISK_COLORS[prediction.predicted_risk_level]?.badge || 'info'}>
+                        {formatRiskLevel(prediction.predicted_risk_level || 'unknown')}
+                      </Badge>
+                      {prediction.confidence && (
+                        <span className="text-xs text-purple-600">({Math.round(prediction.confidence * 100)}% confidence)</span>
+                      )}
+                    </div>
+                    {prediction.trajectory && (
+                      <div className="flex items-center gap-2 text-sm text-purple-700">
+                        {prediction.trajectory === 'improving' ? (
+                          <TrendingUp className="h-4 w-4 text-green-600" />
+                        ) : prediction.trajectory === 'declining' ? (
+                          <TrendingDown className="h-4 w-4 text-red-600" />
+                        ) : (
+                          <Activity className="h-4 w-4 text-yellow-600" />
+                        )}
+                        <span className="capitalize">{prediction.trajectory} trajectory</span>
+                      </div>
+                    )}
+                    {prediction.factors && prediction.factors.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs font-medium text-purple-900 mb-1">Key Factors:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {prediction.factors.map((f: string, i: number) => (
+                            <span key={i} className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">{f}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {prediction.recommendation && (
+                      <p className="text-sm text-purple-700 mt-2">{prediction.recommendation}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-purple-600">Click &quot;Predict&quot; to generate an AI risk prediction for this fellow.</p>
+                )}
               </div>
 
               {/* 7-Signal Breakdown */}

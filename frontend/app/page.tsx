@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { applicantsAPI, screeningAPI, healthAPI, analyticsAPI, challengesAPI, teamsAPI, sprintsAPI, meetingsAPI } from '@/lib/api';
+import { applicantsAPI, screeningAPI, healthAPI, analyticsAPI, challengesAPI, teamsAPI, sprintsAPI, meetingsAPI, activityAPI } from '@/lib/api';
 import {
   Users,
   ClipboardCheck,
@@ -21,6 +21,10 @@ import {
   Repeat,
   Target,
   Clock,
+  Bell,
+  Shield,
+  AlertTriangle,
+  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { Applicant, QueueStats, HealthCheck, ChallengeAnalytics, Team, Sprint, Meeting } from '@/types';
@@ -56,6 +60,7 @@ export default function Dashboard() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
+  const [activityFeed, setActivityFeed] = useState<any[]>([]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -63,7 +68,7 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const [applicantsRes, queueRes, healthRes, dashboardRes, funnelRes, challengeRes, teamsRes, sprintsRes, meetingsRes] = await Promise.all([
+      const [applicantsRes, queueRes, healthRes, dashboardRes, funnelRes, challengeRes, teamsRes, sprintsRes, meetingsRes, activityRes] = await Promise.all([
         applicantsAPI.list(),
         screeningAPI.getQueue(),
         healthAPI.check(),
@@ -73,6 +78,7 @@ export default function Dashboard() {
         teamsAPI.list().catch(() => ({ data: [] })),
         sprintsAPI.list().catch(() => ({ data: [] })),
         meetingsAPI.upcoming(undefined, 7).catch(() => ({ data: [] })),
+        activityAPI.feed(10).catch(() => ({ data: [] })),
       ]);
 
       setApplicants(applicantsRes.data);
@@ -84,6 +90,7 @@ export default function Dashboard() {
       setTeams(teamsRes.data);
       setSprints(sprintsRes.data);
       setUpcomingMeetings(meetingsRes.data);
+      if (activityRes) setActivityFeed(activityRes.data);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -400,6 +407,53 @@ export default function Dashboard() {
               </Card>
             )}
           </div>
+
+          {/* Activity Feed */}
+          {activityFeed.length > 0 && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-blue-600" />
+                    Recent Activity
+                  </CardTitle>
+                  <Link href="/audit-log">
+                    <Button variant="ghost" size="sm">View All</Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {activityFeed.slice(0, 8).map((item: any, idx: number) => {
+                    const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
+                      risk_alert: <AlertTriangle className="h-4 w-4 text-orange-500" />,
+                      warning_issued: <Shield className="h-4 w-4 text-red-500" />,
+                      evaluation: <ClipboardCheck className="h-4 w-4 text-purple-500" />,
+                      acceptance: <CheckCircle className="h-4 w-4 text-green-500" />,
+                      meeting: <Calendar className="h-4 w-4 text-blue-500" />,
+                      sprint: <Repeat className="h-4 w-4 text-teal-500" />,
+                      system: <Zap className="h-4 w-4 text-gray-500" />,
+                    };
+                    const icon = ACTIVITY_ICONS[item.type || item.action] || <Bell className="h-4 w-4 text-gray-400" />;
+                    return (
+                      <div key={item.id || idx} className="flex items-start gap-3">
+                        <div className="mt-0.5 flex-shrink-0">{icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-900">{item.title || item.message || item.action}</p>
+                          {item.message && item.title && (
+                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{item.message}</p>
+                          )}
+                        </div>
+                        <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
+                          {item.created_at ? new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Quick Actions + Screening Queue */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

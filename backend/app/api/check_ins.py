@@ -20,6 +20,7 @@ from app.schemas.check_in import (
 from app.middleware.auth import get_current_user, require_role
 from app.agents.check_in_analyzer import CheckInAnalyzer
 from app.services.event_service import event_publisher
+from app.services.notification_service import create_notification
 
 router = APIRouter(prefix="/check-ins")
 
@@ -82,6 +83,15 @@ async def create_check_in(
     # Broadcast check-in submitted event
     await event_publisher.check_in_submitted(
         fellow_id=str(check_in.fellow_id), week=check_in.week
+    )
+
+    # Create notification for check-in submission
+    await create_notification(
+        db,
+        type="check_in",
+        title=f"Check-in Submitted (Week {check_in.week})",
+        message=f"Fellow submitted check-in for week {check_in.week}" + (" (late)" if is_late else ""),
+        action_url="/check-ins",
     )
 
     return db_check_in
@@ -289,6 +299,16 @@ async def bulk_analyze_check_ins(
             errors.append({"check_in_id": str(check_in.id), "error": str(e)})
 
     await db.commit()
+
+    # Notify on bulk analysis completion
+    if analyzed_count > 0:
+        await create_notification(
+            db,
+            type="batch_complete",
+            title="Bulk Check-in Analysis Complete",
+            message=f"Analyzed {analyzed_count} check-in(s). {len(errors)} error(s).",
+            action_url="/check-ins",
+        )
 
     return {
         "analyzed": analyzed_count,

@@ -8,6 +8,7 @@ from uuid import UUID
 from app.database import get_db
 from app.models.cohort import Cohort, CohortStatus
 from app.models.fellow import Fellow, FellowStatus
+from app.services.notification_service import create_notification
 from pydantic import BaseModel
 from datetime import date
 
@@ -192,6 +193,14 @@ async def graduate_cohort(
     cohort.status = CohortStatus.COMPLETED
 
     await db.commit()
+
+    await create_notification(
+        db,
+        type="system",
+        title=f"Cohort Graduated: {cohort.name}",
+        message=f"{graduated + distinction} graduated ({distinction} with distinction), {did_not_graduate} did not graduate",
+        action_url="/cohorts",
+    )
 
     return {
         "message": f"Graduated {len(fellows)} fellows",

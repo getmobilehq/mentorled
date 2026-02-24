@@ -37,9 +37,9 @@ export const Pagination: React.FC<PaginationProps> = ({
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
+    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
       <div className="flex items-center space-x-2">
-        <span className="text-sm text-gray-700">
+        <span className="text-sm text-gray-700 dark:text-gray-300">
           Showing <span className="font-medium">{startItem}</span> to{' '}
           <span className="font-medium">{endItem}</span> of{' '}
           <span className="font-medium">{totalItems}</span> results
@@ -50,7 +50,7 @@ export const Pagination: React.FC<PaginationProps> = ({
             <select
               value={itemsPerPage}
               onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
-              className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              className="text-sm border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
             >
               <option value={10}>10 per page</option>
               <option value={25}>25 per page</option>
@@ -65,7 +65,7 @@ export const Pagination: React.FC<PaginationProps> = ({
         <button
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
-          className="p-2 rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300"
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
@@ -74,11 +74,11 @@ export const Pagination: React.FC<PaginationProps> = ({
           <>
             <button
               onClick={() => onPageChange(1)}
-              className="px-3 py-1 rounded-md border border-gray-300 hover:bg-gray-50"
+              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
             >
               1
             </button>
-            {startPage > 2 && <span className="px-2 text-gray-500">...</span>}
+            {startPage > 2 && <span className="px-2 text-gray-500 dark:text-gray-400">...</span>}
           </>
         )}
 
@@ -89,7 +89,7 @@ export const Pagination: React.FC<PaginationProps> = ({
             className={`px-3 py-1 rounded-md border ${
               page === currentPage
                 ? 'bg-blue-600 text-white border-blue-600'
-                : 'border-gray-300 hover:bg-gray-50'
+                : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
             }`}
           >
             {page}
@@ -98,10 +98,10 @@ export const Pagination: React.FC<PaginationProps> = ({
 
         {endPage < totalPages && (
           <>
-            {endPage < totalPages - 1 && <span className="px-2 text-gray-500">...</span>}
+            {endPage < totalPages - 1 && <span className="px-2 text-gray-500 dark:text-gray-400">...</span>}
             <button
               onClick={() => onPageChange(totalPages)}
-              className="px-3 py-1 rounded-md border border-gray-300 hover:bg-gray-50"
+              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
             >
               {totalPages}
             </button>
@@ -111,7 +111,7 @@ export const Pagination: React.FC<PaginationProps> = ({
         <button
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
-          className="p-2 rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300"
         >
           <ChevronRight className="h-5 w-5" />
         </button>

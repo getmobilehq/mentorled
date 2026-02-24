@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/contexts/AuthContext';
-import { authAPI } from '@/lib/api';
+import { authAPI, notificationsAPI } from '@/lib/api';
+import { NotificationPreferenceItem } from '@/types';
 import {
   User,
   Shield,
@@ -15,6 +16,9 @@ import {
   Lock,
   CheckCircle,
   XCircle,
+  Bell,
+  Mail,
+  Monitor,
 } from 'lucide-react';
 
 interface UserRecord {
@@ -47,7 +51,7 @@ const ROLE_BADGE_VARIANT: Record<string, 'success' | 'info' | 'default' | 'warni
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'account' | 'users'>('account');
+  const [activeTab, setActiveTab] = useState<'account' | 'notifications' | 'users'>('account');
 
   // Password change
   const [currentPassword, setCurrentPassword] = useState('');
@@ -71,6 +75,12 @@ export default function SettingsPage() {
   const [createError, setCreateError] = useState('');
   const [createSaving, setCreateSaving] = useState(false);
 
+  // Notification preferences
+  const [preferences, setPreferences] = useState<NotificationPreferenceItem[]>([]);
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [prefsSaving, setPrefsSaving] = useState(false);
+  const [prefsSuccess, setPrefsSuccess] = useState('');
+
   const isAdmin = user?.role === 'admin';
 
   const fetchUsers = useCallback(async () => {
@@ -86,11 +96,26 @@ export default function SettingsPage() {
     }
   }, [isAdmin]);
 
+  const fetchPreferences = useCallback(async () => {
+    setPrefsLoading(true);
+    try {
+      const res = await notificationsAPI.getPreferences();
+      setPreferences(res.data.preferences || []);
+    } catch {
+      // silent
+    } finally {
+      setPrefsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'users' && isAdmin) {
       fetchUsers();
     }
-  }, [activeTab, isAdmin, fetchUsers]);
+    if (activeTab === 'notifications') {
+      fetchPreferences();
+    }
+  }, [activeTab, isAdmin, fetchUsers, fetchPreferences]);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,8 +192,37 @@ export default function SettingsPage() {
     }
   };
 
+  const togglePreference = (index: number, field: 'in_app_enabled' | 'email_enabled') => {
+    setPreferences(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: !updated[index][field] };
+      return updated;
+    });
+    setPrefsSuccess('');
+  };
+
+  const handleSavePreferences = async () => {
+    setPrefsSaving(true);
+    setPrefsSuccess('');
+    try {
+      await notificationsAPI.updatePreferences(
+        preferences.map(p => ({
+          notification_type: p.notification_type,
+          in_app_enabled: p.in_app_enabled,
+          email_enabled: p.email_enabled,
+        }))
+      );
+      setPrefsSuccess('Preferences saved successfully');
+    } catch {
+      // silent
+    } finally {
+      setPrefsSaving(false);
+    }
+  };
+
   const tabs = [
     { key: 'account' as const, label: 'Account' },
+    { key: 'notifications' as const, label: 'Notifications' },
     ...(isAdmin ? [{ key: 'users' as const, label: 'User Management' }] : []),
   ];
 
@@ -177,7 +231,7 @@ export default function SettingsPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-sm text-gray-600 mt-1">Manage your account and platform users</p>
+          <p className="text-sm text-gray-600 mt-1">Manage your account, notifications, and platform users</p>
         </div>
 
         {/* Tabs */}
@@ -283,6 +337,94 @@ export default function SettingsPage() {
                   {passwordSaving ? 'Changing...' : 'Change Password'}
                 </Button>
               </form>
+            </Card>
+          </div>
+        )}
+
+        {/* Notifications Tab */}
+        {activeTab === 'notifications' && (
+          <div className="max-w-2xl space-y-6">
+            <Card>
+              <div className="flex items-center gap-2 mb-4">
+                <Bell className="h-5 w-5 text-gray-400" />
+                <h3 className="text-lg font-semibold text-gray-900">Notification Preferences</h3>
+              </div>
+              <p className="text-sm text-gray-500 mb-6">
+                Choose which notifications you receive in-app and via email.
+              </p>
+
+              {prefsLoading ? (
+                <div className="text-center py-8 text-gray-500">Loading preferences...</div>
+              ) : (
+                <>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    {/* Header */}
+                    <div className="grid grid-cols-[1fr,80px,80px] gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200">
+                      <span className="text-xs font-medium text-gray-500 uppercase">Notification Type</span>
+                      <span className="text-xs font-medium text-gray-500 uppercase text-center flex items-center justify-center gap-1">
+                        <Monitor className="h-3 w-3" /> In-App
+                      </span>
+                      <span className="text-xs font-medium text-gray-500 uppercase text-center flex items-center justify-center gap-1">
+                        <Mail className="h-3 w-3" /> Email
+                      </span>
+                    </div>
+
+                    {/* Rows */}
+                    {preferences.map((pref, idx) => (
+                      <div
+                        key={pref.notification_type}
+                        className={`grid grid-cols-[1fr,80px,80px] gap-2 px-4 py-3 items-center ${
+                          idx < preferences.length - 1 ? 'border-b border-gray-100' : ''
+                        }`}
+                      >
+                        <span className="text-sm font-medium text-gray-700">{pref.label}</span>
+                        <div className="flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() => togglePreference(idx, 'in_app_enabled')}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                              pref.in_app_enabled ? 'bg-green-500' : 'bg-gray-300'
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm ${
+                                pref.in_app_enabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                              }`}
+                              style={{ transform: pref.in_app_enabled ? 'translateX(18px)' : 'translateX(2px)' }}
+                            />
+                          </button>
+                        </div>
+                        <div className="flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() => togglePreference(idx, 'email_enabled')}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                              pref.email_enabled ? 'bg-green-500' : 'bg-gray-300'
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm`}
+                              style={{ transform: pref.email_enabled ? 'translateX(18px)' : 'translateX(2px)' }}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {prefsSuccess && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 mt-4">
+                      {prefsSuccess}
+                    </div>
+                  )}
+
+                  <div className="mt-4">
+                    <Button size="sm" onClick={handleSavePreferences} disabled={prefsSaving}>
+                      {prefsSaving ? 'Saving...' : 'Save Preferences'}
+                    </Button>
+                  </div>
+                </>
+              )}
             </Card>
           </div>
         )}

@@ -67,7 +67,7 @@ export interface HealthCheck {
 }
 
 export type FellowRole = ApplicantRole;
-export type FellowStatus = 'onboarded' | 'active' | 'at_risk' | 'warned_once' | 'warned_twice' | 'removed' | 'completed' | 'placed';
+export type FellowStatus = 'onboarded' | 'active' | 'at_risk' | 'warned_once' | 'warned_twice' | 'removed' | 'completed' | 'placed' | 'graduated' | 'graduation_distinction';
 export type RiskLevel = 'on_track' | 'monitor' | 'at_risk' | 'critical';
 
 export interface Fellow {
@@ -618,6 +618,12 @@ export interface Retrospective {
   submitted_by?: string | null;
   submitted_at?: string | null;
   created_at: string;
+  ai_insights?: {
+    summary?: string;
+    themes?: string[];
+    recommended_actions?: string[];
+    team_health_assessment?: string;
+  } | null;
 }
 
 export interface MeetingJoinResult {
@@ -648,7 +654,7 @@ export interface TeamAttendanceSummary {
 }
 
 // Notifications
-export type NotificationType = 'risk_alert' | 'warning_issued' | 'batch_complete' | 'acceptance' | 'evaluation' | 'meeting';
+export type NotificationType = 'risk_alert' | 'warning_issued' | 'batch_complete' | 'acceptance' | 'evaluation' | 'meeting' | 'check_in' | 'sprint' | 'system';
 
 export interface AppNotification {
   id: string;
@@ -664,4 +670,16 @@ export interface AppNotification {
 export interface NotificationListResponse {
   notifications: AppNotification[];
   unread_count: number;
+  total: number;
+}
+
+export interface NotificationPreferenceItem {
+  notification_type: string;
+  label: string;
+  in_app_enabled: boolean;
+  email_enabled: boolean;
+}
+
+export interface NotificationPreferencesResponse {
+  preferences: NotificationPreferenceItem[];
 }

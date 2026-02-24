@@ -7,11 +7,9 @@
   --foreground: #171717;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #111827;
+  --foreground: #f3f4f6;
 }
 
 body {
@@ -23,5 +21,55 @@ body {
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition-property: background-color, border-color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-in-out;
+}
+
+/* Exclude elements that already have their own transitions */
+button, a, [class*="transition"] {
+  transition-property: all;
+}
+
+/* Focus visible outlines for keyboard navigation */
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.dark :focus-visible {
+  outline-color: #60a5fa;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

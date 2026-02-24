@@ -3,6 +3,7 @@ from sqlalchemy import (
     Enum as SQLEnum, func
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import JSON
 from datetime import datetime
 from uuid import UUID, uuid4
 from typing import Optional, List
@@ -47,6 +48,7 @@ class Meeting(Base):
     status: Mapped[str] = mapped_column(
         SQLEnum(MeetingStatus), default=MeetingStatus.SCHEDULED, nullable=False
     )
+    ai_summary: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Relationships

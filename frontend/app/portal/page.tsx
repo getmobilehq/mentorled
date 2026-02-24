@@ -7,7 +7,7 @@ import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
-import { fellowsAPI, sprintsAPI, meetingsAPI, attendanceAPI, checkInsAPI, cohortsAPI, teamsAPI } from '@/lib/api';
+import { fellowsAPI, sprintsAPI, meetingsAPI, attendanceAPI, checkInsAPI, cohortsAPI, teamsAPI, peerFeedbackAPI, certificatesAPI } from '@/lib/api';
 import {
   Home,
   Target,
@@ -25,6 +25,10 @@ import {
   Link2,
   ExternalLink,
   Zap,
+  Award,
+  MessageSquare,
+  Star,
+  Download,
 } from 'lucide-react';
 import type { Fellow, Sprint, SprintObjective, Meeting, Attendance, CheckIn, Cohort, Team } from '@/types';
 
@@ -73,6 +77,25 @@ export default function PortalPage() {
     energy_level: 7,
   });
 
+  // Peer feedback
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [receivedFeedback, setReceivedFeedback] = useState<any[]>([]);
+  const [feedbackSummary, setFeedbackSummary] = useState<any>(null);
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [feedbackForm, setFeedbackForm] = useState({
+    receiver_id: '',
+    strengths: '',
+    areas_to_improve: '',
+    collaboration_rating: 8,
+    communication_rating: 8,
+    technical_rating: 8,
+    overall_rating: 8,
+    anonymous: true,
+  });
+
+  // Certificate
+  const [downloadingCert, setDownloadingCert] = useState(false);
+
   useEffect(() => {
     fetchFellowProfile();
   }, []);
@@ -117,6 +140,8 @@ export default function PortalPage() {
       promises.push(
         attendanceAPI.getFellowHistory(fellowData.id).then(r => setAttendance(r.data)).catch(() => {}),
         checkInsAPI.getFellowCheckIns(fellowData.id).then(r => setCheckIns(r.data)).catch(() => {}),
+        peerFeedbackAPI.received(fellowData.id).then(r => setReceivedFeedback(r.data)).catch(() => {}),
+        peerFeedbackAPI.summary(fellowData.id).then(r => setFeedbackSummary(r.data)).catch(() => {}),
       );
 
       await Promise.all(promises);
@@ -256,6 +281,56 @@ export default function PortalPage() {
       toast(err.response?.data?.detail || 'Failed to submit check-in.', 'error');
     } finally {
       setSubmittingCheckIn(false);
+    }
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!fellow) return;
+    setSubmittingFeedback(true);
+    try {
+      await peerFeedbackAPI.submit({
+        giver_id: fellow.id,
+        receiver_id: feedbackForm.receiver_id,
+        sprint_id: activeSprint?.id,
+        strengths: feedbackForm.strengths,
+        areas_to_improve: feedbackForm.areas_to_improve,
+        collaboration_rating: feedbackForm.collaboration_rating,
+        communication_rating: feedbackForm.communication_rating,
+        technical_rating: feedbackForm.technical_rating,
+        overall_rating: feedbackForm.overall_rating,
+        anonymous: feedbackForm.anonymous,
+      });
+      setFeedbackModalOpen(false);
+      setFeedbackForm({
+        receiver_id: '', strengths: '', areas_to_improve: '',
+        collaboration_rating: 8, communication_rating: 8,
+        technical_rating: 8, overall_rating: 8, anonymous: true,
+      });
+      toast('Peer feedback submitted.', 'success');
+    } catch (err: any) {
+      toast(err.response?.data?.detail || 'Failed to submit feedback.', 'error');
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
+
+  const handleDownloadCertificate = async () => {
+    if (!fellow) return;
+    setDownloadingCert(true);
+    try {
+      const res = await certificatesAPI.download(fellow.id);
+      const blob = new Blob([res.data], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `certificate-${fellow.name || 'fellow'}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Certificate downloaded.', 'success');
+    } catch (err: any) {
+      toast(err.response?.data?.detail || 'Certificate not available yet.', 'error');
+    } finally {
+      setDownloadingCert(false);
     }
   };
 
@@ -769,6 +844,173 @@ export default function PortalPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Peer Feedback */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-indigo-600" />
+                Peer Feedback
+              </CardTitle>
+              <Button size="sm" variant="primary" onClick={() => setFeedbackModalOpen(true)}>
+                Give Feedback
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* Summary */}
+            {feedbackSummary && feedbackSummary.total_received > 0 ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { label: 'Collaboration', value: feedbackSummary.avg_collaboration },
+                    { label: 'Communication', value: feedbackSummary.avg_communication },
+                    { label: 'Technical', value: feedbackSummary.avg_technical },
+                    { label: 'Overall', value: feedbackSummary.avg_overall },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="rounded-lg bg-indigo-50 p-3 text-center">
+                      <p className="text-xs text-indigo-700">{label}</p>
+                      <p className="text-xl font-bold text-indigo-600">{value?.toFixed(1) || '-'}</p>
+                      <div className="flex justify-center gap-0.5 mt-1">
+                        {[1,2,3,4,5,6,7,8,9,10].map(s => (
+                          <div key={s} className={`w-1.5 h-1.5 rounded-full ${s <= Math.round(value || 0) ? 'bg-indigo-500' : 'bg-gray-200'}`} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500">{feedbackSummary.total_received} feedback received</p>
+
+                {/* Recent feedback */}
+                {receivedFeedback.length > 0 && (
+                  <div className="space-y-2">
+                    {receivedFeedback.slice(0, 3).map((fb: any) => (
+                      <div key={fb.id} className="rounded-lg border p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-gray-900">
+                            {fb.anonymous ? 'Anonymous' : fb.giver_name || 'Peer'}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                            <span className="text-sm font-bold">{fb.overall_rating}/10</span>
+                          </div>
+                        </div>
+                        {fb.strengths && <p className="text-sm text-green-700 mt-1">{fb.strengths}</p>}
+                        {fb.areas_to_improve && <p className="text-sm text-orange-700 mt-1">{fb.areas_to_improve}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">No peer feedback received yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Certificate Download */}
+        {fellow.status === 'graduated' || fellow.status === 'graduation_distinction' ? (
+          <Card className="border-yellow-200 bg-yellow-50/30">
+            <div className="flex items-center justify-between p-2">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-yellow-100">
+                  <Award className="h-6 w-6 text-yellow-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">
+                    {fellow.status === 'graduation_distinction' ? 'Graduated with Distinction!' : 'Congratulations, Graduate!'}
+                  </p>
+                  <p className="text-sm text-gray-600">Download your completion certificate</p>
+                </div>
+              </div>
+              <Button onClick={handleDownloadCertificate} disabled={downloadingCert}>
+                <Download className="mr-2 h-4 w-4" />
+                {downloadingCert ? 'Downloading...' : 'Download Certificate'}
+              </Button>
+            </div>
+          </Card>
+        ) : null}
+
+        {/* Peer Feedback Modal */}
+        <Modal
+          open={feedbackModalOpen}
+          onOpenChange={setFeedbackModalOpen}
+          title="Give Peer Feedback"
+          size="lg"
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Team Member *</label>
+              <select
+                value={feedbackForm.receiver_id}
+                onChange={e => setFeedbackForm(prev => ({ ...prev, receiver_id: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              >
+                <option value="">Select a teammate...</option>
+                {objectives.filter(o => o.owner_fellow_id && o.owner_fellow_id !== fellow?.id)
+                  .reduce((acc: string[], o) => acc.includes(o.owner_fellow_id!) ? acc : [...acc, o.owner_fellow_id!], [])
+                  .map(fId => (
+                    <option key={fId} value={fId}>{fId.slice(0, 8)}...</option>
+                  ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Strengths *</label>
+              <textarea
+                rows={2}
+                value={feedbackForm.strengths}
+                onChange={e => setFeedbackForm(prev => ({ ...prev, strengths: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                placeholder="What does this person do well?"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Areas to Improve</label>
+              <textarea
+                rows={2}
+                value={feedbackForm.areas_to_improve}
+                onChange={e => setFeedbackForm(prev => ({ ...prev, areas_to_improve: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                placeholder="Constructive suggestions..."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {(['collaboration_rating', 'communication_rating', 'technical_rating', 'overall_rating'] as const).map(field => (
+                <div key={field}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
+                    {field.replace('_rating', '')} ({feedbackForm[field]}/10)
+                  </label>
+                  <input
+                    type="range" min="1" max="10"
+                    value={feedbackForm[field]}
+                    onChange={e => setFeedbackForm(prev => ({ ...prev, [field]: parseInt(e.target.value) }))}
+                    className="w-full"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={feedbackForm.anonymous}
+                onChange={e => setFeedbackForm(prev => ({ ...prev, anonymous: e.target.checked }))}
+                className="rounded border-gray-300"
+              />
+              <label className="text-sm text-gray-700">Submit anonymously</label>
+            </div>
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button variant="secondary" onClick={() => setFeedbackModalOpen(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={handleSubmitFeedback}
+                disabled={submittingFeedback || !feedbackForm.receiver_id || !feedbackForm.strengths.trim()}
+              >
+                {submittingFeedback ? 'Submitting...' : 'Submit Feedback'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
 
         {/* Check-in Submission Modal */}
         <Modal
