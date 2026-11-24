@@ -21,11 +21,19 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  setSession: (accessToken: string, refreshToken: string, user: User) => void;
   logout: () => void;
   isAuthenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Landing route per role
+export const roleHome = (role?: string) =>
+  role === 'viewer' ? '/portal'
+  : role === 'reviewer' ? '/mentor'
+  : role === 'applicant' ? '/applicant-portal'
+  : '/';
 
 // Token storage utilities
 const TOKEN_KEY = 'access_token';
@@ -116,11 +124,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { access_token, refresh_token, user: userData } = response.data;
       setTokens(access_token, refresh_token);
       setUser(userData);
-      router.push('/');
+      router.push(roleHome(userData?.role));
     } catch (error: any) {
       console.error('Login failed:', error);
       throw new Error(error.response?.data?.detail || 'Login failed');
     }
+  };
+
+  // Establish a session from tokens already obtained (e.g. after applying)
+  const setSession = (accessToken: string, refreshToken: string, userData: User) => {
+    setTokens(accessToken, refreshToken);
+    setUser(userData);
+    router.push(roleHome(userData?.role));
   };
 
   const logout = () => {
@@ -135,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         loading,
         login,
+        setSession,
         logout,
         isAuthenticated: !!user,
       }}

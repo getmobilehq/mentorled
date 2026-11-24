@@ -48,9 +48,10 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(default=""
         await websocket.close(code=4001, reason="Invalid token")
         return
 
-    user_id = payload.get("sub", "anonymous")
+    # Tokens store the id under "user_id" (see app/utils/auth.py); "sub" is a fallback
+    user_id = payload.get("user_id") or payload.get("sub", "anonymous")
 
-    await ws_manager.connect(user_id, websocket)
+    await ws_manager.connect(user_id, websocket, role=payload.get("role"))
     try:
         # Keep connection alive — listen for pings or client messages
         while True:

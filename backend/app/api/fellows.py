@@ -14,7 +14,7 @@ from app.models.check_in import CheckIn
 from app.models.risk_assessment import RiskAssessment
 from app.models.user import User
 from app.schemas.fellow import FellowCreate, FellowResponse, FellowUpdate
-from app.middleware.auth import get_current_user
+from app.middleware.auth import get_current_user, require_staff
 
 
 class MilestoneUpdate(BaseModel):
@@ -53,7 +53,7 @@ async def get_my_fellow_profile(
     }
 
 
-@router.post("/", response_model=FellowResponse)
+@router.post("/", response_model=FellowResponse, dependencies=[Depends(require_staff)])
 async def create_fellow(
     fellow: FellowCreate,
     db: AsyncSession = Depends(get_db)
@@ -65,7 +65,7 @@ async def create_fellow(
     await db.refresh(new_fellow)
     return new_fellow
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(require_staff)])
 async def list_fellows(
     cohort_id: Optional[UUID] = None,
     status: Optional[str] = None,
@@ -93,7 +93,7 @@ async def list_fellows(
         for f in fellows
     ]
 
-@router.get("/{fellow_id}")
+@router.get("/{fellow_id}", dependencies=[Depends(require_staff)])
 async def get_fellow(fellow_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get a specific fellow."""
     result = await db.execute(
@@ -108,7 +108,7 @@ async def get_fellow(fellow_id: UUID, db: AsyncSession = Depends(get_db)):
         "email": fellow.applicant.email if fellow.applicant else "",
     }
 
-@router.patch("/{fellow_id}", response_model=FellowResponse)
+@router.patch("/{fellow_id}", response_model=FellowResponse, dependencies=[Depends(require_staff)])
 async def update_fellow(
     fellow_id: UUID,
     updates: FellowUpdate,
@@ -127,7 +127,7 @@ async def update_fellow(
     await db.refresh(fellow)
     return fellow
 
-@router.get("/{fellow_id}/check-ins")
+@router.get("/{fellow_id}/check-ins", dependencies=[Depends(require_staff)])
 async def get_fellow_check_ins(
     fellow_id: UUID,
     db: AsyncSession = Depends(get_db)
@@ -141,7 +141,7 @@ async def get_fellow_check_ins(
     check_ins = result.scalars().all()
     return check_ins
 
-@router.get("/{fellow_id}/risk")
+@router.get("/{fellow_id}/risk", dependencies=[Depends(require_staff)])
 async def get_fellow_risk(
     fellow_id: UUID,
     db: AsyncSession = Depends(get_db)
@@ -159,7 +159,7 @@ async def get_fellow_risk(
     return risk
 
 
-@router.patch("/{fellow_id}/milestones")
+@router.patch("/{fellow_id}/milestones", dependencies=[Depends(require_staff)])
 async def update_milestones(
     fellow_id: UUID,
     data: MilestoneUpdate,
@@ -189,7 +189,7 @@ async def update_milestones(
     }
 
 
-@router.post("/{fellow_id}/emergency-absence")
+@router.post("/{fellow_id}/emergency-absence", dependencies=[Depends(require_staff)])
 async def set_emergency_absence(
     fellow_id: UUID,
     data: EmergencyAbsenceRequest,
@@ -220,7 +220,7 @@ async def set_emergency_absence(
     }
 
 
-@router.delete("/{fellow_id}/emergency-absence")
+@router.delete("/{fellow_id}/emergency-absence", dependencies=[Depends(require_staff)])
 async def clear_emergency_absence(
     fellow_id: UUID,
     db: AsyncSession = Depends(get_db),

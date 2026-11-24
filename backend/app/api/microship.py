@@ -212,9 +212,14 @@ async def evaluate_submission(
             "evaluated_at": submission.created_at
         }
 
+    except HTTPException:
+        # Don't mask inner 4xx (e.g. unsupported role) as a 500
+        raise
     except Exception as e:
+        # AI returned an unusable response (malformed JSON / missing fields) — this is a
+        # content problem, not a server fault, so surface it as 422 with a clear message.
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Evaluation failed: {str(e)}"
         )
 

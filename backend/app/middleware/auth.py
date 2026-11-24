@@ -98,7 +98,16 @@ def require_role(*allowed_roles: UserRole):
     return role_checker
 
 
+# Roles that operate the program (as opposed to fellows/applicants who use it)
+STAFF_ROLES = (UserRole.ADMIN, UserRole.REVIEWER, UserRole.API)
+
+
+def is_staff(user: User) -> bool:
+    return user.role in STAFF_ROLES
+
+
 # Convenience dependencies for common roles
+require_staff = require_role(*STAFF_ROLES)
 require_admin = require_role(UserRole.ADMIN)
 require_reviewer = require_role(UserRole.REVIEWER)
 require_viewer = require_role(UserRole.VIEWER)

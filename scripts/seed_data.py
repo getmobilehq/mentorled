@@ -110,6 +110,74 @@ async def seed_database():
             else:
                 print("ℹ️  Mentor user already exists")
 
+            # --- Applications-Open cohort (for the public apply + submit flow) ---
+            open_cohort = Cohort(
+                name="2026 Summer Cohort (Applications Open)",
+                start_date=date(2026, 7, 6),
+                end_date=date(2026, 9, 25),
+                status="applications_open",
+                target_size=150,
+            )
+            db.add(open_cohort)
+            await db.flush()
+            print(f"✓ Created open cohort: {open_cohort.name} (applications_open)")
+
+            # A couple of active challenges open to all roles in the open cohort
+            db.add_all([
+                Challenge(
+                    cohort_id=open_cohort.id,
+                    title="Intro Challenge: Build Something Small",
+                    description="Ship a small project that demonstrates your craft. Keep it focused and well-documented.",
+                    requirements=["Public repo or live link", "README explaining your approach", "Clean, readable code"],
+                    role_type="all",
+                    submission_types=["github", "document"],
+                    deadline=datetime.now() + timedelta(days=10),
+                    status="active",
+                    share_token=secrets.token_urlsafe(32),
+                    sequence_number=1,
+                    duration_hours=12,
+                ),
+                Challenge(
+                    cohort_id=open_cohort.id,
+                    title="Reflection: Why This Fellowship",
+                    description="A short written submission about what you want to get out of the fellowship.",
+                    requirements=["300-500 words", "Specific goals", "Link to a doc"],
+                    role_type="all",
+                    submission_types=["document"],
+                    deadline=datetime.now() + timedelta(days=10),
+                    status="active",
+                    share_token=secrets.token_urlsafe(32),
+                    sequence_number=2,
+                    duration_hours=2,
+                ),
+            ])
+
+            # Seed a test applicant account + application in the open cohort
+            result = await db.execute(select(User).where(User.email == "applicant@example.com"))
+            if not result.scalar_one_or_none():
+                applicant_user = User(
+                    email="applicant@example.com",
+                    username="applicant@example.com",
+                    full_name="Alex Applicant",
+                    hashed_password=hash_password("applicant123"),
+                    role=UserRole.APPLICANT,
+                    is_active=True,
+                    is_verified=False,
+                )
+                db.add(applicant_user)
+                db.add(Applicant(
+                    cohort_id=open_cohort.id,
+                    email="applicant@example.com",
+                    name="Alex Applicant",
+                    role="frontend",
+                    status="applied",
+                    source="seed",
+                ))
+                await db.flush()
+                print("✅ Created applicant user (applicant@example.com / applicant123)")
+            else:
+                print("ℹ️  Applicant user already exists")
+
             # Create a cohort — set to ACTIVE for fellowship
             cohort = Cohort(
                 name="2025 Spring Cohort",

@@ -11,6 +11,8 @@ from app.models.challenge import Challenge, ChallengeStatus
 from app.models.challenge_track_config import ChallengeTrackConfig
 from app.models.microship import MicroshipSubmission
 from app.models.applicant import Applicant
+from app.models.user import User
+from app.middleware.auth import get_current_user
 from app.schemas.challenge import (
     ChallengeCreate,
     ChallengeUpdate,
@@ -19,7 +21,7 @@ from app.schemas.challenge import (
     ChallengePublicResponse,
     ChallengeGenerateRequest,
     ChallengeGenerateResponse,
-    PublicSubmissionCreate,
+    AuthedSubmissionCreate,
     PublicSubmissionResponse,
 )
 from app.agents.challenge_generator import challenge_generator
@@ -411,80 +413,117 @@ async def get_public_challenge(
     )
 
 
-@router.post("/public/{share_token}/submit", response_model=PublicSubmissionResponse)
-async def public_submit(
-    share_token: str,
-    submission: PublicSubmissionCreate,
-    background_tasks: BackgroundTasks,
+async def _resolve_applicant_for_user(
+    user: User, cohort_id: UUID, db: AsyncSession
+) -> Applicant:
+    """Find the logged-in user's applicant record within a cohort."""
+    applicant = (
+        await db.execute(
+            select(Applicant).where(
+                Applicant.email == user.email,
+                Applicant.cohort_id == cohort_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not applicant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You have not applied to this cohort",
+        )
+    return applicant
+
+
+@router.get("/my", response_model=List[ChallengePublicResponse])
+async def list_my_challenges(
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Public endpoint for applicants to submit their work (no auth required)."""
-    # Find challenge by share token
-    result = await db.execute(
-        select(Challenge).where(Challenge.share_token == share_token)
-    )
-    challenge = result.scalar_one_or_none()
-
-    if not challenge:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Challenge not found"
+    """Active challenges available to the logged-in applicant (their cohort + role)."""
+    applicant = (
+        await db.execute(
+            select(Applicant)
+            .where(Applicant.email == current_user.email)
+            .order_by(Applicant.applied_at.desc())
         )
+    ).scalars().first()
+    if not applicant:
+        raise HTTPException(
+            status_code=404, detail="No application linked to this account"
+        )
+
+    result = await db.execute(
+        select(Challenge).where(
+            Challenge.cohort_id == applicant.cohort_id,
+            Challenge.status == ChallengeStatus.ACTIVE.value,
+            Challenge.role_type.in_([applicant.role, "all"]),
+        ).order_by(Challenge.sequence_number.asc().nulls_last(), Challenge.deadline.asc())
+    )
+    challenges = result.scalars().all()
+
+    out = []
+    for ch in challenges:
+        data = await _enrich_challenge_response(ch, db)
+        out.append(ChallengePublicResponse(**{
+            k: data[k] for k in ChallengePublicResponse.model_fields if k in data
+        }))
+    return out
+
+
+@router.post("/{challenge_id}/submit", response_model=PublicSubmissionResponse)
+async def submit_challenge(
+    challenge_id: UUID,
+    submission: AuthedSubmissionCreate,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticated endpoint for an applicant to submit their work for a challenge."""
+    challenge = (
+        await db.execute(select(Challenge).where(Challenge.id == challenge_id))
+    ).scalar_one_or_none()
+    if not challenge:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Challenge not found")
 
     if challenge.status != ChallengeStatus.ACTIVE.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This challenge is not currently accepting submissions"
+            detail="This challenge is not currently accepting submissions",
         )
-
     if challenge.deadline and datetime.utcnow() > challenge.deadline:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The deadline for this challenge has passed"
+            detail="The deadline for this challenge has passed",
         )
-
     if not challenge.cohort_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This challenge is not linked to a cohort"
+            detail="This challenge is not linked to a cohort",
         )
 
-    # Look up or create applicant by email in this cohort
-    result = await db.execute(
-        select(Applicant).where(
-            Applicant.email == submission.email,
-            Applicant.cohort_id == challenge.cohort_id,
-        )
-    )
-    applicant = result.scalar_one_or_none()
+    applicant = await _resolve_applicant_for_user(current_user, challenge.cohort_id, db)
 
-    if not applicant:
-        # Create new applicant
-        applicant = Applicant(
-            cohort_id=challenge.cohort_id,
-            email=submission.email,
-            name=submission.name,
-            role=challenge.role_type if challenge.role_type != "all" else "frontend",
-            status="microship_pending",
+    # Role gating: challenge must target this applicant's role (or all)
+    if challenge.role_type not in ("all", applicant.role):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This challenge is not assigned to your role",
         )
-        db.add(applicant)
-        await db.flush()
 
-    # Check for duplicate submission
-    result = await db.execute(
-        select(MicroshipSubmission).where(
-            MicroshipSubmission.applicant_id == applicant.id,
-            MicroshipSubmission.challenge_ref == challenge.id,
+    # No duplicate submission
+    existing = (
+        await db.execute(
+            select(MicroshipSubmission).where(
+                MicroshipSubmission.applicant_id == applicant.id,
+                MicroshipSubmission.challenge_ref == challenge.id,
+            )
         )
-    )
-    existing = result.scalar_one_or_none()
+    ).scalar_one_or_none()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="You have already submitted for this challenge"
+            detail="You have already submitted for this challenge",
         )
 
-    # Create submission
     now = datetime.utcnow()
     on_time = challenge.deadline is None or now <= challenge.deadline
 
@@ -500,7 +539,7 @@ async def public_submit(
         communication_log=[{
             "timestamp": now.isoformat(),
             "type": "submission",
-            "content": submission.notes or "Challenge submitted via public link"
+            "content": submission.notes or "Challenge submitted via applicant portal",
         }],
     )
     db.add(new_submission)
@@ -510,26 +549,23 @@ async def public_submit(
     # Auto-progress applicant status on submission
     await update_applicant_status_on_event(db, applicant.id, "submission")
 
-    # Send confirmation email
     background_tasks.add_task(
         email_service.send_submission_confirmation,
-        applicant_email=submission.email,
-        applicant_name=submission.name,
+        applicant_email=applicant.email,
+        applicant_name=applicant.name,
         challenge_title=challenge.title,
         submitted_at=now.strftime("%B %d, %Y at %I:%M %p UTC"),
         on_time=on_time,
     )
 
-    # Create in-app notification for new submission
     await create_notification(
         db,
         type="evaluation",
         title=f"New Submission: {challenge.title}",
-        message=f"{submission.name} ({submission.email}) submitted for '{challenge.title}'",
+        message=f"{applicant.name} ({applicant.email}) submitted for '{challenge.title}'",
         action_url="/challenges",
     )
 
-    # Auto-evaluate if enabled on this challenge
     if challenge.auto_evaluate:
         background_tasks.add_task(run_auto_evaluation, new_submission.id)
 

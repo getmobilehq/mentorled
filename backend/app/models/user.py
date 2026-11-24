@@ -14,7 +14,8 @@ class UserRole(str, enum.Enum):
     """User roles for role-based access control"""
     ADMIN = "admin"  # Full access to everything
     REVIEWER = "reviewer"  # Can review AI decisions, update statuses
-    VIEWER = "viewer"  # Read-only access
+    VIEWER = "viewer"  # Read-only access (fellows)
+    APPLICANT = "applicant"  # Candidate in the pipeline — apply + submit challenges
     API = "api"  # Programmatic access for external systems
 
 

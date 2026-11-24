@@ -15,6 +15,7 @@ import csv
 from app.database import get_db
 from app.models.applicant import Applicant
 from app.models.fellow import Fellow
+from app.services.fellow_conversion import convert_applicant_to_fellow
 from app.models.evaluation import ApplicationEvaluation
 from app.agents.screening_agent import screening_agent
 from app.agents.delivery_agent import DeliveryAgent
@@ -128,8 +129,13 @@ async def bulk_update_status(
     )
     applicants = list(result.scalars().all())
 
-    for applicant in applicants:
-        applicant.status = request.new_status
+    if request.new_status == "accepted":
+        # Accepting promotes applicants to fellows + upgrades their accounts
+        for applicant in applicants:
+            await convert_applicant_to_fellow(db, applicant)
+    else:
+        for applicant in applicants:
+            applicant.status = request.new_status
 
     await db.commit()
 

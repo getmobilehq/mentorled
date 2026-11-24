@@ -59,6 +59,16 @@ async def list_cohorts(db: AsyncSession = Depends(get_db)):
     cohorts = result.scalars().all()
     return cohorts
 
+@router.get("/open", response_model=List[CohortResponse])
+async def list_open_cohorts(db: AsyncSession = Depends(get_db)):
+    """Public: list cohorts currently accepting applications (for the apply page)."""
+    result = await db.execute(
+        select(Cohort)
+        .where(Cohort.status == CohortStatus.APPLICATIONS_OPEN.value)
+        .order_by(Cohort.start_date.desc())
+    )
+    return result.scalars().all()
+
 @router.get("/{cohort_id}", response_model=CohortResponse)
 async def get_cohort(cohort_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get a specific cohort."""

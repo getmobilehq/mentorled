@@ -69,6 +69,18 @@ api.interceptors.response.use(
 export const authAPI = {
   me: () =>
     api.get('/api/auth/me'),
+  apply: (data: {
+    cohort_id: string;
+    name: string;
+    email: string;
+    role: string;
+    password: string;
+    portfolio_url?: string;
+    github_url?: string;
+    linkedin_url?: string;
+    project_description?: string;
+    time_commitment?: boolean;
+  }) => api.post('/api/applicants/apply', data),
   changePassword: (data: { current_password: string; new_password: string }) =>
     api.post('/api/auth/change-password', data),
   listUsers: () =>
@@ -91,6 +103,10 @@ export const applicantsAPI = {
     api.put(`/api/applicants/${id}`, data),
   getJourney: (id: string) =>
     api.get(`/api/applicants/${id}/journey`),
+  me: () =>
+    api.get('/api/applicants/me'),
+  convertToFellow: (id: string, teamId?: string) =>
+    api.post(`/api/applicants/${id}/convert-to-fellow`, null, { params: { team_id: teamId } }),
 };
 
 export const screeningAPI = {
@@ -109,6 +125,8 @@ export const screeningAPI = {
 export const cohortsAPI = {
   list: () =>
     api.get('/api/cohorts/'),
+  listOpen: () =>
+    api.get('/api/cohorts/open'),
   get: (id: string) =>
     api.get(`/api/cohorts/${id}`),
   create: (data: any) =>
@@ -318,8 +336,11 @@ export const challengesAPI = {
     api.get(`/api/challenges/${id}/submissions`),
   getPublic: (shareToken: string) =>
     api.get(`/api/challenges/public/${shareToken}`),
-  submitPublic: (shareToken: string, data: any) =>
-    api.post(`/api/challenges/public/${shareToken}/submit`, data),
+  // Applicant-facing (authenticated)
+  myChallenges: () =>
+    api.get('/api/challenges/my'),
+  submit: (challengeId: string, data: { submission_url: string; submission_type: string; notes?: string }) =>
+    api.post(`/api/challenges/${challengeId}/submit`, data),
   generateContent: (data: {
     role_type: string;
     duration_hours?: number | null;

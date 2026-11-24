@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useAuth } from '@/contexts/AuthContext';
+import Link from 'next/link';
+import { useAuth, roleHome } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 
@@ -18,7 +19,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!authLoading && isAuthenticated && user) {
-      router.push(user.role === 'viewer' ? '/portal' : user.role === 'reviewer' ? '/mentor' : '/');
+      router.push(roleHome(user.role));
     }
   }, [isAuthenticated, authLoading, user, router]);
 
@@ -110,6 +111,13 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </Button>
         </form>
+
+        <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
+          Want to join a cohort?{' '}
+          <Link href="/apply" className="font-semibold text-green-600 hover:text-green-700">
+            Apply now
+          </Link>
+        </p>
       </Card>
     </div>
   );

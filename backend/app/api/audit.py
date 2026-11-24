@@ -7,13 +7,14 @@ from uuid import UUID
 from datetime import datetime, timedelta
 
 from app.database import get_db
+from app.middleware.auth import require_staff
 from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 
 router = APIRouter()
 
 
-@router.get("/audit-logs")
+@router.get("/audit-logs", dependencies=[Depends(require_staff)])
 async def list_audit_logs(
     action: Optional[str] = None,
     entity_type: Optional[str] = None,
@@ -70,7 +71,7 @@ async def list_audit_logs(
     }
 
 
-@router.get("/audit-logs/actions")
+@router.get("/audit-logs/actions", dependencies=[Depends(require_staff)])
 async def get_audit_actions(
     db: AsyncSession = Depends(get_db),
 ):
@@ -81,7 +82,7 @@ async def get_audit_actions(
     return [r[0] for r in result.all()]
 
 
-@router.get("/audit-logs/entity-types")
+@router.get("/audit-logs/entity-types", dependencies=[Depends(require_staff)])
 async def get_audit_entity_types(
     db: AsyncSession = Depends(get_db),
 ):
@@ -92,7 +93,7 @@ async def get_audit_entity_types(
     return [r[0] for r in result.all()]
 
 
-@router.get("/activity/feed")
+@router.get("/activity/feed", dependencies=[Depends(require_staff)])
 async def get_activity_feed(
     limit: int = 30,
     db: AsyncSession = Depends(get_db),

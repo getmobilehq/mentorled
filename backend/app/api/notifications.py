@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
 from app.models.user import User, UserRole
-from app.middleware.auth import get_current_user, require_role
+from app.middleware.auth import get_current_user, require_role, is_staff
 from app.schemas.notification import (
     NotificationResponse,
     NotificationListResponse,
@@ -29,25 +29,26 @@ from app.services.notification_service import (
 router = APIRouter(prefix="/notifications")
 
 
+def _visible_to(user: User):
+    """Notifications a user may see: their own, plus staff-wide (user_id NULL) ones for staff only.
+    Staff-wide notifications carry fellow/applicant details, so applicants and fellows never see them."""
+    if is_staff(user):
+        return (Notification.user_id == user.id) | (Notification.user_id.is_(None))
+    return Notification.user_id == user.id
+
+
 @router.get("/", response_model=NotificationListResponse)
 async def list_notifications(
-    user_id: Optional[UUID] = None,
     unread_only: bool = False,
     type: Optional[str] = None,
     limit: int = 20,
     offset: int = 0,
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List notifications with filtering, pagination, and search."""
-    query = select(Notification)
-
-    if user_id:
-        query = query.where(
-            (Notification.user_id == user_id) | (Notification.user_id.is_(None))
-        )
-    else:
-        query = query.where(Notification.user_id.is_(None))
+    """List the current user's notifications with filtering, pagination, and search."""
+    query = select(Notification).where(_visible_to(current_user))
 
     if unread_only:
         query = query.where(Notification.is_read == False)
@@ -71,13 +72,9 @@ async def list_notifications(
     notifications = result.scalars().all()
 
     # Get unread count
-    unread_query = select(func.count(Notification.id)).where(Notification.is_read == False)
-    if user_id:
-        unread_query = unread_query.where(
-            (Notification.user_id == user_id) | (Notification.user_id.is_(None))
-        )
-    else:
-        unread_query = unread_query.where(Notification.user_id.is_(None))
+    unread_query = select(func.count(Notification.id)).where(
+        Notification.is_read == False, _visible_to(current_user)
+    )
 
     count_result = await db.execute(unread_query)
     unread_count = count_result.scalar() or 0
@@ -91,17 +88,13 @@ async def list_notifications(
 
 @router.get("/unread-count")
 async def get_unread_count(
-    user_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Get count of unread notifications."""
-    query = select(func.count(Notification.id)).where(Notification.is_read == False)
-    if user_id:
-        query = query.where(
-            (Notification.user_id == user_id) | (Notification.user_id.is_(None))
-        )
-    else:
-        query = query.where(Notification.user_id.is_(None))
+    """Get count of the current user's unread notifications."""
+    query = select(func.count(Notification.id)).where(
+        Notification.is_read == False, _visible_to(current_user)
+    )
 
     result = await db.execute(query)
     return {"unread_count": result.scalar() or 0}
@@ -111,12 +104,13 @@ async def get_unread_count(
 async def mark_notifications_read(
     request: MarkReadRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Mark specific notifications as read."""
+    """Mark specific notifications (visible to the current user) as read."""
     now = datetime.utcnow()
     await db.execute(
         update(Notification)
-        .where(Notification.id.in_(request.notification_ids))
+        .where(Notification.id.in_(request.notification_ids), _visible_to(current_user))
         .values(is_read=True, read_at=now)
     )
     await db.commit()
@@ -125,22 +119,16 @@ async def mark_notifications_read(
 
 @router.post("/mark-all-read")
 async def mark_all_read(
-    user_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Mark all notifications as read."""
+    """Mark all of the current user's notifications as read."""
     now = datetime.utcnow()
     query = (
         update(Notification)
-        .where(Notification.is_read == False)
+        .where(Notification.is_read == False, _visible_to(current_user))
         .values(is_read=True, read_at=now)
     )
-    if user_id:
-        query = query.where(
-            (Notification.user_id == user_id) | (Notification.user_id.is_(None))
-        )
-    else:
-        query = query.where(Notification.user_id.is_(None))
 
     await db.execute(query)
     await db.commit()
@@ -151,10 +139,13 @@ async def mark_all_read(
 async def delete_notifications(
     request: DeleteNotificationsRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Delete specific notifications."""
+    """Delete specific notifications visible to the current user."""
     await db.execute(
-        delete(Notification).where(Notification.id.in_(request.notification_ids))
+        delete(Notification).where(
+            Notification.id.in_(request.notification_ids), _visible_to(current_user)
+        )
     )
     await db.commit()
     return {"status": "success", "deleted": len(request.notification_ids)}
@@ -232,7 +223,7 @@ async def broadcast_notification(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
-    """Broadcast a notification to all users (admin only)."""
+    """Broadcast a notification to all staff (admin only). Applicants and fellows don't see staff-wide notifications."""
     notification = await create_notification(
         db=db,
         type="system",

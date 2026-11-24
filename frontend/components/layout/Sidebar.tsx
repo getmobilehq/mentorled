@@ -71,6 +71,11 @@ const mentorNavigation: NavItem[] = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
+const applicantNavigation: NavItem[] = [
+  { name: 'My Application', href: '/applicant-portal', icon: Home },
+  { name: 'Settings', href: '/settings', icon: Settings },
+];
+
 interface SidebarProps {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -80,10 +85,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onMobileCl
   const pathname = usePathname();
   const { user } = useAuth();
 
-  const navigation = user?.role === 'viewer' ? portalNavigation : user?.role === 'reviewer' ? mentorNavigation : adminNavigation;
+  const navigation =
+    user?.role === 'viewer' ? portalNavigation
+    : user?.role === 'reviewer' ? mentorNavigation
+    : user?.role === 'applicant' ? applicantNavigation
+    : adminNavigation;
 
   const isActive = (href: string) => {
-    if (href === '/' || href === '/portal') {
+    if (href === '/' || href === '/portal' || href === '/applicant-portal') {
       return pathname === href;
     }
     return pathname.startsWith(href);

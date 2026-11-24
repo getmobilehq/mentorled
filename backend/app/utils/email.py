@@ -312,6 +312,25 @@ class EmailService:
         )
 
 
+    async def send_application_received(
+        self,
+        applicant_email: str,
+        applicant_name: str,
+        cohort_name: str,
+    ) -> bool:
+        """Welcome email after a candidate applies to a cohort."""
+        subject = f"MentorLed: Application Received - {cohort_name}"
+        context = {
+            "applicant_name": applicant_name,
+            "cohort_name": cohort_name,
+        }
+        return await self.send_email(
+            to_email=applicant_email,
+            subject=subject,
+            template_name="application_received.html",
+            context=context,
+        )
+
     async def send_check_in_reminder(
         self,
         fellow_email: str,

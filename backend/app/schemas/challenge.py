@@ -130,6 +130,13 @@ class PublicSubmissionCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class AuthedSubmissionCreate(BaseModel):
+    """Submission by a logged-in applicant — identity comes from the account."""
+    submission_url: str = Field(..., min_length=1)
+    submission_type: str
+    notes: Optional[str] = None
+
+
 class PublicSubmissionResponse(BaseModel):
     message: str
     submission_id: UUID

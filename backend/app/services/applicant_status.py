@@ -9,14 +9,17 @@ from app.models.applicant import Applicant
 
 logger = logging.getLogger(__name__)
 
-# Status progression rules (never auto-accept/reject)
+# Status progression rules (never auto-accept/reject).
+# Values must match the ApplicantStatus enum in app/models/applicant.py.
 STATUS_TRANSITIONS = {
     "submission": {
-        "applied": "microship_pending",
-        "screening": "microship_pending",
+        "applied": "microship_submitted",
+        "screening": "microship_submitted",
+        "microship_pending": "microship_submitted",
     },
     "evaluation": {
-        "microship_pending": "microship_completed",
+        "microship_pending": "microship_evaluated",
+        "microship_submitted": "microship_evaluated",
     },
 }
 

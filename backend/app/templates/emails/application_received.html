@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Application Received</h1>
+
+<p>Dear {{ applicant_name }},</p>
+
+<p>Thank you for applying to <strong>{{ cohort_name }}</strong>. We have received your application and created your applicant account.</p>
+
+<div class="highlight">
+    <h2 style="margin-top: 0;">What Happens Next</h2>
+    <p>Log in to your applicant portal to track your application status and complete any challenges assigned to your cohort.</p>
+</div>
+
+<p>We review applications on a rolling basis and will be in touch with next steps. If you have any questions, please reach out to the program team.</p>
+
+<p>
+    Best regards,<br>
+    The MentorLed Team
+</p>
+{% endblock %}

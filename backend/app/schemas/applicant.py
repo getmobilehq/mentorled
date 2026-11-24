@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, UUID4, HttpUrl
+from pydantic import BaseModel, EmailStr, UUID4, HttpUrl, Field
 from datetime import datetime
 from typing import Optional
 
@@ -15,6 +15,11 @@ class ApplicantBase(BaseModel):
 
 class ApplicantCreate(ApplicantBase):
     cohort_id: UUID4
+
+class ApplicantApply(ApplicantBase):
+    """Public application: creates an account + applicant record together."""
+    cohort_id: UUID4
+    password: str = Field(..., min_length=8, max_length=72)
 
 class ApplicantUpdate(BaseModel):
     status: Optional[str] = None
