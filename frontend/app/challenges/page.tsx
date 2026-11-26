@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDelete } from '@/components/ui/ConfirmDelete';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge, getStatusBadgeVariant } from '@/components/ui/Badge';
@@ -35,6 +36,7 @@ import {
   AlertTriangle,
   Pencil,
   Download,
+  Trash2,
 } from 'lucide-react';
 import type { Challenge, ChallengeSubmission, ChallengeAnalytics, Cohort, TrackConfig, TrackSummary } from '@/types';
 
@@ -83,6 +85,9 @@ export default function ChallengesPage() {
   const [selectedCohortId, setSelectedCohortId] = useState<string>('');
   const [trackSummary, setTrackSummary] = useState<TrackSummary[]>([]);
   const [loadingTracks, setLoadingTracks] = useState(false);
+
+  // Delete confirmation
+  const [deletingChallenge, setDeletingChallenge] = useState<Challenge | null>(null);
 
   // Create/Edit modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -840,14 +845,25 @@ export default function ChallengesPage() {
                                     {(() => {
                                       const fullChallenge = challenges.find(c => c.id === challenge.id);
                                       return fullChallenge ? (
-                                        <Button
-                                          size="sm"
-                                          variant="secondary"
-                                          onClick={() => handleEdit(fullChallenge)}
-                                        >
-                                          <Pencil className="mr-1 h-3 w-3" />
-                                          Edit
-                                        </Button>
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            onClick={() => handleEdit(fullChallenge)}
+                                          >
+                                            <Pencil className="mr-1 h-3 w-3" />
+                                            Edit
+                                          </Button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); setDeletingChallenge(fullChallenge); }}
+                                            aria-label={`Delete ${fullChallenge.title}`}
+                                            title="Delete challenge"
+                                            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-gray-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        </>
                                       ) : null;
                                     })()}
                                     <Button
@@ -1081,6 +1097,16 @@ export default function ChallengesPage() {
                             Archive
                           </Button>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setDeletingChallenge(challenge); }}
+                          aria-label={`Delete ${challenge.title}`}
+                          title="Delete challenge"
+                          className="ml-auto rounded-lg p-2 text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-gray-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </Card>
                   ))}
@@ -1088,6 +1114,29 @@ export default function ChallengesPage() {
               )}
             </>
           )}
+
+          {/* Delete Confirmation */}
+          <ConfirmDelete
+            open={!!deletingChallenge}
+            onOpenChange={(o) => { if (!o) setDeletingChallenge(null); }}
+            entity="challenge"
+            name={deletingChallenge?.title}
+            details={(() => {
+              const n = deletingChallenge
+                ? analytics?.per_challenge.find(p => p.challenge_id === deletingChallenge.id)?.submission_count ?? 0
+                : 0;
+              return n > 0
+                ? `Its ${n} existing submission${n === 1 ? ' is' : 's are'} kept but will no longer be linked to this challenge. The public submission link will stop working.`
+                : 'Any existing submissions are kept but will no longer be linked to this challenge. The public submission link will stop working.';
+            })()}
+            onConfirm={() => challengesAPI.delete(deletingChallenge!.id)}
+            onDeleted={() => {
+              toast(`Challenge "${deletingChallenge?.title}" deleted.`, 'success');
+              setDeletingChallenge(null);
+              fetchData();
+              if (viewMode === 'track') fetchTrackSummary();
+            }}
+          />
 
           {/* Create Challenge Modal */}
           <Modal

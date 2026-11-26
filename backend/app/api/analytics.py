@@ -4,13 +4,14 @@ Analytics and reporting API endpoints.
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, Date
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from uuid import UUID
 from datetime import datetime, timedelta, date
 
 from app.database import get_db
-from app.models.applicant import Applicant
-from app.models.fellow import Fellow
+from app.models.applicant import Applicant, ApplicantStatus
+from app.models.fellow import Fellow, FellowStatus
 from app.models.evaluation import ApplicationEvaluation
 from app.models.risk_assessment import RiskAssessment
 from app.models.audit_log import AuditLog
@@ -345,3 +346,118 @@ async def get_cohort_comparison(
         })
 
     return {"cohorts": comparison}
+
+
+# ---------------------------------------------------------------------------
+# Dashboard overview: one call feeds the homepage (metrics, charts, table)
+# ---------------------------------------------------------------------------
+
+_SELECTED = {
+    ApplicantStatus.ELIGIBLE, ApplicantStatus.MICROSHIP_PENDING,
+    ApplicantStatus.MICROSHIP_SUBMITTED, ApplicantStatus.MICROSHIP_EVALUATED,
+}
+_OUTCOME_GROUPS = [
+    ("Accepted", {ApplicantStatus.ACCEPTED}),
+    ("Shortlisted", _SELECTED),
+    ("In review", {ApplicantStatus.APPLIED, ApplicantStatus.SCREENING}),
+    ("Not selected", {ApplicantStatus.NOT_ELIGIBLE, ApplicantStatus.REJECTED}),
+    ("Withdrawn", {ApplicantStatus.WITHDRAWN}),
+]
+_ALUMNI_STATUSES = (FellowStatus.GRADUATED, FellowStatus.GRADUATED_DISTINCTION)
+
+
+def _enum_value(v):
+    return getattr(v, "value", v)
+
+
+@router.get("/overview")
+async def get_dashboard_overview(db: AsyncSession = Depends(get_db)):
+    """Everything the dashboard homepage needs, computed from live data."""
+    # Applicants by status / role
+    status_rows = (await db.execute(
+        select(Applicant.status, func.count()).group_by(Applicant.status)
+    )).all()
+    by_status = {_enum_value(s): n for s, n in status_rows}
+    total = sum(by_status.values())
+
+    role_rows = (await db.execute(
+        select(Applicant.role, func.count()).group_by(Applicant.role)
+    )).all()
+    alumni_role_rows = (await db.execute(
+        select(Applicant.role, func.count())
+        .join(Fellow, Fellow.applicant_id == Applicant.id)
+        .where(Fellow.status.in_(_ALUMNI_STATUSES))
+        .group_by(Applicant.role)
+    )).all()
+    alumni_by_role = {_enum_value(r): n for r, n in alumni_role_rows}
+    by_track = sorted(
+        [{"track": _enum_value(r), "applications": n, "alumni": alumni_by_role.get(_enum_value(r), 0)}
+         for r, n in role_rows],
+        key=lambda t: t["applications"], reverse=True,
+    )
+
+    alumni = sum(alumni_by_role.values())
+    cohorts = (await db.execute(select(func.count()).select_from(Cohort))).scalar() or 0
+    committed = (await db.execute(
+        select(func.count()).select_from(Applicant).where(Applicant.time_commitment.is_(True))
+    )).scalar() or 0
+
+    # Selection rate over applicants who have a screening decision
+    undecided = {"applied", "screening", "withdrawn"}
+    decided = sum(n for s, n in by_status.items() if s not in undecided)
+    selected = sum(n for s, n in by_status.items() if s not in undecided | {"not_eligible", "rejected"})
+    selection_rate = round(selected / decided * 100, 1) if decided else 0.0
+
+    outcomes = []
+    for label, statuses in _OUTCOME_GROUPS:
+        n = sum(by_status.get(_enum_value(s), 0) for s in statuses)
+        if n:
+            outcomes.append({"label": label, "value": n})
+
+    # Applications per month (sparkline for the metric card)
+    month = func.date_trunc("month", Applicant.applied_at)
+    month_rows = (await db.execute(
+        select(month, func.count()).group_by(month).order_by(month)
+    )).all()
+    by_month = [{"month": m.strftime("%Y-%m"), "count": n} for m, n in month_rows if m]
+
+    # Five most recent submissions
+    subs = (await db.execute(
+        select(MicroshipSubmission)
+        .options(selectinload(MicroshipSubmission.applicant), selectinload(MicroshipSubmission.challenge))
+        .order_by(func.coalesce(MicroshipSubmission.submitted_at, MicroshipSubmission.created_at).desc())
+        .limit(5)
+    )).scalars().all()
+    recent = []
+    for s in subs:
+        raw = s.raw_analysis or {}
+        recent.append({
+            "id": str(s.id),
+            "name": s.applicant.name if s.applicant else "Unknown",
+            "email": s.applicant.email if s.applicant else None,
+            "track": _enum_value(s.applicant.role) if s.applicant else None,
+            "challenge": s.challenge.title if s.challenge else (s.challenge_id or "Microship"),
+            "submission_url": s.submission_url,
+            "submission_type": s.submission_type,
+            "submitted_at": (s.submitted_at or s.created_at).isoformat(),
+            "on_time": s.on_time,
+            "outcome": raw.get("outcome"),
+            "score": raw.get("weighted_score"),
+        })
+
+    return {
+        "metrics": {
+            "total_applications": total,
+            "alumni": alumni,
+            "selection_rate": selection_rate,
+            "selected": selected,
+            "decided": decided,
+            "cohorts": cohorts,
+            "tracks": len(by_track),
+            "committed": committed,
+        },
+        "applications_by_month": by_month,
+        "by_track": by_track,
+        "outcomes": outcomes,
+        "recent_submissions": recent,
+    }

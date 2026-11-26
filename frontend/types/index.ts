@@ -1,4 +1,4 @@
-export type ApplicantRole = 'product_manager' | 'product_designer' | 'frontend' | 'backend' | 'qa';
+export type ApplicantRole = 'product_manager' | 'product_designer' | 'project_manager' | 'frontend' | 'backend' | 'qa';
 export type ApplicantStatus = 'applied' | 'screening' | 'eligible' | 'not_eligible' | 'microship_pending' | 'microship_submitted' | 'microship_evaluated' | 'accepted' | 'rejected' | 'withdrawn';
 export type CohortStatus = 'planning' | 'applications_open' | 'microship' | 'active' | 'completed';
 
@@ -67,7 +67,7 @@ export interface HealthCheck {
 }
 
 export type FellowRole = ApplicantRole;
-export type FellowStatus = 'onboarded' | 'active' | 'at_risk' | 'warned_once' | 'warned_twice' | 'removed' | 'completed' | 'placed' | 'graduated' | 'graduation_distinction';
+export type FellowStatus = 'active' | 'on_track' | 'monitor' | 'at_risk' | 'critical' | 'warning' | 'final_warning' | 'removed' | 'graduated' | 'graduated_distinction' | 'did_not_graduate';
 export type RiskLevel = 'on_track' | 'monitor' | 'at_risk' | 'critical';
 
 export interface Fellow {
@@ -682,4 +682,34 @@ export interface NotificationPreferenceItem {
 
 export interface NotificationPreferencesResponse {
   preferences: NotificationPreferenceItem[];
+}
+
+// Dashboard overview (GET /api/analytics/overview)
+export interface DashboardOverview {
+  metrics: {
+    total_applications: number;
+    alumni: number;
+    selection_rate: number;
+    selected: number;
+    decided: number;
+    cohorts: number;
+    tracks: number;
+    committed: number;
+  };
+  applications_by_month: { month: string; count: number }[];
+  by_track: { track: string; applications: number; alumni: number }[];
+  outcomes: { label: string; value: number }[];
+  recent_submissions: {
+    id: string;
+    name: string;
+    email?: string | null;
+    track?: string | null;
+    challenge: string;
+    submission_url?: string | null;
+    submission_type?: string | null;
+    submitted_at: string;
+    on_time?: boolean | null;
+    outcome?: 'progress' | 'borderline' | 'do_not_progress' | null;
+    score?: number | null;
+  }[];
 }

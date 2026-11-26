@@ -6,6 +6,8 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
+import { ConfirmDelete, apiErrorMessage } from '@/components/ui/ConfirmDelete';
+import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { authAPI, notificationsAPI } from '@/lib/api';
 import { NotificationPreferenceItem } from '@/types';
@@ -19,6 +21,10 @@ import {
   Bell,
   Mail,
   Monitor,
+  Pencil,
+  Trash2,
+  KeyRound,
+  Search,
 } from 'lucide-react';
 
 interface UserRecord {
@@ -80,6 +86,19 @@ export default function SettingsPage() {
   const [prefsLoading, setPrefsLoading] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [prefsSuccess, setPrefsSuccess] = useState('');
+
+  // Edit / reset password / delete user
+  const { toast } = useToast();
+  const [userSearch, setUserSearch] = useState('');
+  const [editUser, setEditUser] = useState<UserRecord | null>(null);
+  const [editForm, setEditForm] = useState({ full_name: '', email: '', role: 'viewer', is_active: true });
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [resetUser, setResetUser] = useState<UserRecord | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [resetSaving, setResetSaving] = useState(false);
+  const [deleteUser, setDeleteUser] = useState<UserRecord | null>(null);
 
   const isAdmin = user?.role === 'admin';
 
@@ -173,6 +192,57 @@ export default function SettingsPage() {
       setCreateSaving(false);
     }
   };
+
+  const openEditUser = (u: UserRecord) => {
+    setEditUser(u);
+    setEditForm({ full_name: u.full_name, email: u.email, role: u.role, is_active: u.is_active });
+    setEditError('');
+  };
+
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editUser) return;
+    setEditSaving(true);
+    setEditError('');
+    try {
+      const isSelf = editUser.id === user?.id;
+      await authAPI.updateUser(editUser.id, {
+        full_name: editForm.full_name,
+        email: editForm.email,
+        // you can't demote or deactivate yourself
+        ...(isSelf ? {} : { role: editForm.role, is_active: editForm.is_active }),
+      });
+      setEditUser(null);
+      toast('User updated', 'success');
+      fetchUsers();
+    } catch (err) {
+      setEditError(apiErrorMessage(err, 'Failed to update user'));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetUser) return;
+    setResetSaving(true);
+    setResetError('');
+    try {
+      await authAPI.resetUserPassword(resetUser.id, resetPassword);
+      toast(`Password reset for ${resetUser.full_name}`, 'success');
+      setResetUser(null);
+      setResetPassword('');
+    } catch (err) {
+      setResetError(apiErrorMessage(err, 'Failed to reset password'));
+    } finally {
+      setResetSaving(false);
+    }
+  };
+
+  const filteredUsers = users.filter((u) => {
+    const q = userSearch.trim().toLowerCase();
+    return !q || [u.full_name, u.email, u.username, u.role].some((v) => v?.toLowerCase().includes(q));
+  });
 
   const handleToggleActive = async (userId: string, currentlyActive: boolean) => {
     try {
@@ -438,6 +508,18 @@ export default function SettingsPage() {
                 <h2 className="text-lg font-semibold text-gray-900">Platform Users</h2>
                 <Badge variant="default">{users.length} user{users.length !== 1 ? 's' : ''}</Badge>
               </div>
+              <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="search"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search users…"
+                  aria-label="Search users"
+                  className="w-48 rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                />
+              </div>
               <Button
                 size="sm"
                 onClick={() => {
@@ -448,6 +530,7 @@ export default function SettingsPage() {
                 <Plus className="h-4 w-4 mr-1" />
                 Add User
               </Button>
+              </div>
             </div>
 
             {usersLoading ? (
@@ -467,11 +550,17 @@ export default function SettingsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((u) => (
+                      {filteredUsers.length === 0 && (
+                        <tr><td colSpan={6} className="py-10 text-center text-sm text-gray-500">No users match “{userSearch}”</td></tr>
+                      )}
+                      {filteredUsers.map((u) => (
                         <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-3 px-4">
                             <div>
-                              <p className="text-sm font-medium text-gray-900">{u.full_name}</p>
+                              <p className="text-sm font-medium text-gray-900">
+                                {u.full_name}
+                                {u.id === user?.id && <span className="ml-2 text-xs font-normal text-gray-400">(you)</span>}
+                              </p>
                               <p className="text-xs text-gray-500">{u.email}</p>
                             </div>
                           </td>
@@ -507,15 +596,43 @@ export default function SettingsPage() {
                               : 'Never'}
                           </td>
                           <td className="py-3 px-4">
-                            {u.id !== user?.id && (
-                              <Button
-                                size="sm"
-                                variant={u.is_active ? 'danger' : 'secondary'}
-                                onClick={() => handleToggleActive(u.id, u.is_active)}
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => openEditUser(u)}
+                                aria-label={`Edit ${u.full_name}`}
+                                title="Edit"
+                                className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600"
                               >
-                                {u.is_active ? 'Deactivate' : 'Activate'}
-                              </Button>
-                            )}
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => { setResetUser(u); setResetPassword(''); setResetError(''); }}
+                                aria-label={`Reset password for ${u.full_name}`}
+                                title="Reset password"
+                                className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600"
+                              >
+                                <KeyRound className="h-4 w-4" />
+                              </button>
+                              {u.id !== user?.id && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => handleToggleActive(u.id, u.is_active)}
+                                  >
+                                    {u.is_active ? 'Deactivate' : 'Activate'}
+                                  </Button>
+                                  <button
+                                    onClick={() => setDeleteUser(u)}
+                                    aria-label={`Delete ${u.full_name}`}
+                                    title="Delete"
+                                    className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -610,6 +727,80 @@ export default function SettingsPage() {
             </div>
           </form>
         </Modal>
+
+        {/* Edit User Modal */}
+        <Modal open={!!editUser} onOpenChange={(o) => !o && setEditUser(null)} title="Edit User" size="md">
+          {editUser && (
+            <form onSubmit={handleEditUser} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <input type="text" value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                  <input type="text" value={editUser.username} disabled className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none bg-gray-50 text-gray-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                  <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} disabled={editUser.id === user?.id} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none disabled:opacity-50">
+                    {ROLE_OPTIONS.map((r) => (
+                      <option key={r} value={r}>{ROLE_LABELS[r] || r}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <label className="flex h-[38px] items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={editForm.is_active} onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })} disabled={editUser.id === user?.id} className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
+                    Active
+                  </label>
+                </div>
+              </div>
+              {editUser.id === user?.id && (
+                <p className="text-xs text-gray-500">You can&apos;t change your own role or deactivate yourself.</p>
+              )}
+              {editError && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{editError}</div>}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button size="sm" variant="secondary" type="button" onClick={() => setEditUser(null)}>Cancel</Button>
+                <Button size="sm" type="submit" disabled={editSaving}>{editSaving ? 'Saving...' : 'Save Changes'}</Button>
+              </div>
+            </form>
+          )}
+        </Modal>
+
+        {/* Reset Password Modal */}
+        <Modal open={!!resetUser} onOpenChange={(o) => !o && setResetUser(null)} title="Reset Password" description={resetUser ? `Set a new password for ${resetUser.full_name} (${resetUser.email}).` : undefined} size="sm">
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+              <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" required minLength={8} maxLength={72} autoComplete="new-password" />
+              <p className="mt-1 text-xs text-gray-500">At least 8 characters. Share it with the user securely.</p>
+            </div>
+            {resetError && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{resetError}</div>}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button size="sm" variant="secondary" type="button" onClick={() => setResetUser(null)}>Cancel</Button>
+              <Button size="sm" type="submit" disabled={resetSaving}>{resetSaving ? 'Saving...' : 'Reset Password'}</Button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* Delete User */}
+        <ConfirmDelete
+          open={!!deleteUser}
+          onOpenChange={(o) => !o && setDeleteUser(null)}
+          entity="user"
+          name={deleteUser ? `${deleteUser.full_name} (${deleteUser.email})` : undefined}
+          details="They will lose access immediately. Consider deactivating instead if you may need the account later."
+          onConfirm={() => authAPI.deleteUser(deleteUser!.id)}
+          onDeleted={() => { toast('User deleted', 'success'); fetchUsers(); }}
+        />
       </div>
     </AppLayout>
   );

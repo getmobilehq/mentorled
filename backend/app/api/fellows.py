@@ -15,6 +15,11 @@ from app.models.risk_assessment import RiskAssessment
 from app.models.user import User
 from app.schemas.fellow import FellowCreate, FellowResponse, FellowUpdate
 from app.middleware.auth import get_current_user, require_staff
+from app.middleware.auth import require_admin
+from app.models.placement_match import PlacementMatch
+from app.models.retrospective import Retrospective
+from app.models.sprint_objective import SprintObjective
+from sqlalchemy import delete as sa_delete, update as sa_update, select as sa_select, func as sa_func
 
 
 class MilestoneUpdate(BaseModel):
@@ -240,3 +245,19 @@ async def clear_emergency_absence(
     await db.commit()
 
     return {"status": "cleared", "fellow_id": fellow.id}
+
+@router.delete("/{fellow_id}", status_code=204)
+async def delete_fellow(
+    fellow_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a fellow record (admin only). The underlying applicant is kept."""
+    fellow = (await db.execute(sa_select(Fellow).where(Fellow.id == fellow_id))).scalar_one_or_none()
+    if not fellow:
+        raise HTTPException(status_code=404, detail="Fellow not found")
+    await db.execute(sa_delete(PlacementMatch).where(PlacementMatch.fellow_id == fellow_id))
+    await db.execute(sa_update(Retrospective).where(Retrospective.submitted_by == fellow_id).values(submitted_by=None))
+    await db.execute(sa_update(SprintObjective).where(SprintObjective.owner_fellow_id == fellow_id).values(owner_fellow_id=None))
+    await db.execute(sa_delete(Fellow).where(Fellow.id == fellow_id))
+    await db.commit()

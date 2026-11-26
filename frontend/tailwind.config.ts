@@ -9,6 +9,30 @@ const config: Config = {
   darkMode: 'class',
   theme: {
     extend: {
+      keyframes: {
+        'fade-up': {
+          '0%': { opacity: '0', transform: 'translateY(12px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'grow-up': {
+          '0%': { transform: 'scaleY(0)' },
+          '100%': { transform: 'scaleY(1)' },
+        },
+        'grow-right': {
+          '0%': { transform: 'scaleX(0)' },
+          '100%': { transform: 'scaleX(1)' },
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
+      },
+      animation: {
+        'fade-up': 'fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both',
+        'grow-up': 'grow-up 0.9s cubic-bezier(0.16, 1, 0.3, 1) both',
+        'grow-right': 'grow-right 1s cubic-bezier(0.16, 1, 0.3, 1) both',
+        shimmer: 'shimmer 2.5s linear infinite',
+      },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",

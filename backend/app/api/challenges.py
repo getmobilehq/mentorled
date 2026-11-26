@@ -29,6 +29,8 @@ from app.utils.email import email_service
 from app.services.auto_evaluate import run_auto_evaluation
 from app.services.applicant_status import update_applicant_status_on_event
 from app.services.notification_service import create_notification
+from app.middleware.auth import require_admin
+from sqlalchemy import delete as sa_delete, update as sa_update, select as sa_select, func as sa_func
 
 router = APIRouter(prefix="/challenges")
 
@@ -760,3 +762,17 @@ async def get_challenge_submissions(
         })
 
     return response
+
+@router.delete("/{challenge_id}", status_code=204)
+async def delete_challenge(
+    challenge_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a challenge (admin only). Existing submissions are kept but unlinked."""
+    challenge = (await db.execute(sa_select(Challenge).where(Challenge.id == challenge_id))).scalar_one_or_none()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    await db.execute(sa_update(MicroshipSubmission).where(MicroshipSubmission.challenge_ref == challenge_id).values(challenge_ref=None))
+    await db.execute(sa_delete(Challenge).where(Challenge.id == challenge_id))
+    await db.commit()

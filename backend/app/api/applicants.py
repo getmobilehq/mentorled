@@ -24,6 +24,8 @@ from app.utils.auth import hash_password, create_access_token, create_refresh_to
 from app.utils.email import email_service
 from app.middleware.auth import get_current_user, require_staff
 from app.services.fellow_conversion import convert_applicant_to_fellow
+from app.middleware.auth import require_admin
+from sqlalchemy import delete as sa_delete, update as sa_update, select as sa_select, func as sa_func
 
 router = APIRouter(prefix="/applicants")
 
@@ -416,3 +418,19 @@ async def get_applicant_journey(applicant_id: UUID, db: AsyncSession = Depends(g
         "timeline": timeline,
         "fellow": fellow_data,
     }
+
+@router.delete("/{applicant_id}", status_code=204)
+async def delete_applicant(
+    applicant_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an applicant and their evaluations/submissions (admin only). Refused once they are a fellow."""
+    applicant = (await db.execute(sa_select(Applicant).where(Applicant.id == applicant_id))).scalar_one_or_none()
+    if not applicant:
+        raise HTTPException(status_code=404, detail="Applicant not found")
+    has_fellow = (await db.execute(sa_select(sa_func.count()).select_from(Fellow).where(Fellow.applicant_id == applicant_id))).scalar()
+    if has_fellow:
+        raise HTTPException(status_code=409, detail="This applicant is a fellow. Delete the fellow record first.")
+    await db.execute(sa_delete(Applicant).where(Applicant.id == applicant_id))
+    await db.commit()

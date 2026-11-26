@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { PageSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDelete } from '@/components/ui/ConfirmDelete';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { cohortsAPI, applicantsAPI, fellowsAPI } from '@/lib/api';
 import {
@@ -17,6 +18,7 @@ import {
   ArrowRight,
   Pencil,
   GraduationCap,
+  Trash2,
 } from 'lucide-react';
 import type { Cohort, Applicant, Fellow } from '@/types';
 
@@ -51,6 +53,9 @@ export default function CohortsPage() {
     pass_threshold: 2.5,
   });
   const [graduateResult, setGraduateResult] = useState<any>(null);
+
+  // Delete confirmation
+  const [deletingCohort, setDeletingCohort] = useState<Cohort | null>(null);
 
   // Create/Edit modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -240,9 +245,20 @@ export default function CohortsPage() {
                             {STATUS_LABELS[cohort.status] || cohort.status}
                           </Badge>
                         </div>
-                        <Button size="sm" variant="secondary" onClick={() => handleEdit(cohort)}>
-                          <Pencil className="h-3 w-3" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="secondary" onClick={() => handleEdit(cohort)} aria-label={`Edit ${cohort.name}`}>
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setDeletingCohort(cohort); }}
+                            aria-label={`Delete ${cohort.name}`}
+                            title="Delete cohort"
+                            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-gray-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Details */}
@@ -388,6 +404,21 @@ export default function CohortsPage() {
               </div>
             )}
           </Modal>
+
+          {/* Delete Confirmation */}
+          <ConfirmDelete
+            open={!!deletingCohort}
+            onOpenChange={(o) => { if (!o) setDeletingCohort(null); }}
+            entity="cohort"
+            name={deletingCohort?.name}
+            details="Only empty cohorts can be deleted. If it still has applicants, fellows or teams, remove or move them first."
+            onConfirm={() => cohortsAPI.delete(deletingCohort!.id)}
+            onDeleted={() => {
+              toast(`Cohort "${deletingCohort?.name}" deleted.`, 'success');
+              setDeletingCohort(null);
+              fetchData();
+            }}
+          />
 
           {/* Create/Edit Modal */}
           <Modal

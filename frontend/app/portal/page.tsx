@@ -910,7 +910,7 @@ export default function PortalPage() {
         </Card>
 
         {/* Certificate Download */}
-        {fellow.status === 'graduated' || fellow.status === 'graduation_distinction' ? (
+        {fellow.status === 'graduated' || fellow.status === 'graduated_distinction' ? (
           <Card className="border-yellow-200 bg-yellow-50/30">
             <div className="flex items-center justify-between p-2">
               <div className="flex items-center gap-3">
@@ -919,7 +919,7 @@ export default function PortalPage() {
                 </div>
                 <div>
                   <p className="font-semibold text-gray-900">
-                    {fellow.status === 'graduation_distinction' ? 'Graduated with Distinction!' : 'Congratulations, Graduate!'}
+                    {fellow.status === 'graduated_distinction' ? 'Graduated with Distinction!' : 'Congratulations, Graduate!'}
                   </p>
                   <p className="text-sm text-gray-600">Download your completion certificate</p>
                 </div>

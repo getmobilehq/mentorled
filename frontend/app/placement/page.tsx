@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDelete } from '@/components/ui/ConfirmDelete';
 import { fellowsAPI, placementAPI, cohortsAPI } from '@/lib/api';
 import {
   Briefcase,
@@ -27,6 +28,7 @@ import {
   Send,
   MapPin,
   Globe,
+  Trash2,
 } from 'lucide-react';
 import type { Fellow, Profile, JobOpportunity, PlacementMatch, Cohort } from '@/types';
 
@@ -76,6 +78,7 @@ export default function PlacementPage() {
   const [draftingIntro, setDraftingIntro] = useState<string | null>(null);
   const [savingOpp, setSavingOpp] = useState(false);
   const [updatingMatchStatus, setUpdatingMatchStatus] = useState<string | null>(null);
+  const [deletingOpp, setDeletingOpp] = useState<JobOpportunity | null>(null);
 
   // Opportunity form
   const [oppForm, setOppForm] = useState({
@@ -567,6 +570,15 @@ export default function PlacementPage() {
                             {opp.status === 'active' && (
                               <Button size="sm" variant="ghost" onClick={() => handleOppStatus(opp.id, 'closed')}>Close</Button>
                             )}
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setDeletingOpp(opp); }}
+                              aria-label={`Delete ${opp.title}`}
+                              title="Delete opportunity"
+                              className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-gray-500 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -767,6 +779,26 @@ export default function PlacementPage() {
             </div>
           )}
         </Modal>
+
+        {/* Delete Opportunity Confirmation */}
+        <ConfirmDelete
+          open={!!deletingOpp}
+          onOpenChange={(o) => { if (!o) setDeletingOpp(null); }}
+          entity="opportunity"
+          name={deletingOpp ? `${deletingOpp.title} at ${deletingOpp.employer_name}` : undefined}
+          details="All fellow matches for this opportunity will be deleted too. Fellow profiles are not affected."
+          onConfirm={() => placementAPI.deleteOpportunity(deletingOpp!.id)}
+          onDeleted={() => {
+            toast(`Opportunity "${deletingOpp?.title}" deleted.`, 'success');
+            setDeletingOpp(null);
+            fetchData();
+            if (selectedFellowForMatches) {
+              placementAPI.getFellowMatches(selectedFellowForMatches)
+                .then(res => setMatches(res.data))
+                .catch(() => setMatches([]));
+            }
+          }}
+        />
 
         {/* Opportunity Create/Edit Modal */}
         <Modal

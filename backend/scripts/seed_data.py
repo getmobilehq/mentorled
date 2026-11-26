@@ -719,7 +719,7 @@ async def main():
             print("=" * 60)
             print(f"""
 Summary:
-  - Admin User: admin@mentorled.com / admin123
+  - Admin (Olamide Johnson): admin@mentorled.com / admin123
   - Cohorts: 2 (1 active, 1 past)
   - Applicants: {len(applicants)}
   - Microship Submissions: {len(submissions)}

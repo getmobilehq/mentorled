@@ -13,6 +13,9 @@ from app.models.fellow_profile import FellowProfile
 from app.models.job_opportunity import JobOpportunity
 from app.models.placement_match import PlacementMatch
 from app.agents.placement_agent import PlacementAgent
+from app.middleware.auth import require_admin
+from app.models.user import User
+from sqlalchemy import delete as sa_delete, update as sa_update, select as sa_select, func as sa_func
 
 router = APIRouter(prefix="/placement")
 
@@ -529,3 +532,17 @@ async def update_match_status(
     await db.commit()
 
     return {"match_id": str(match.id), "status": match.status}
+
+@router.delete("/opportunities/{opportunity_id}", status_code=204)
+async def delete_opportunity(
+    opportunity_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a job opportunity and its matches (admin only)."""
+    opp = (await db.execute(sa_select(JobOpportunity).where(JobOpportunity.id == opportunity_id))).scalar_one_or_none()
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    await db.execute(sa_delete(PlacementMatch).where(PlacementMatch.opportunity_id == opportunity_id))
+    await db.execute(sa_delete(JobOpportunity).where(JobOpportunity.id == opportunity_id))
+    await db.commit()
