@@ -9,10 +9,11 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { PageSkeleton } from '@/components/ui/Skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDelete } from '@/components/ui/ConfirmDelete';
 import { teamsAPI, cohortsAPI, fellowsAPI } from '@/lib/api';
 import {
   Users, Plus, Pencil, ExternalLink, UserPlus, UserMinus,
-  Repeat, MessageSquare, Github,
+  Repeat, MessageSquare, Github, Trash2,
 } from 'lucide-react';
 import type { Cohort, Fellow } from '@/types';
 
@@ -76,6 +77,9 @@ export default function TeamsPage() {
     github_repo: '',
     cohort_id: '',
   });
+
+  // Delete confirmation
+  const [deletingTeam, setDeletingTeam] = useState<TeamData | null>(null);
 
   // Detail modal
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -329,9 +333,21 @@ export default function TeamsPage() {
                     </Badge>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleOpenEdit(team); }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      aria-label={`Edit ${team.name}`}
                       className="text-gray-400 hover:text-gray-600"
                     >
                       <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setDeletingTeam(team); }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      aria-label={`Delete ${team.name}`}
+                      title="Delete team"
+                      className="text-gray-400 transition-colors hover:text-rose-600 dark:hover:text-rose-400"
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
@@ -378,6 +394,25 @@ export default function TeamsPage() {
             ))}
           </div>
         )}
+
+        {/* Delete Confirmation */}
+        <ConfirmDelete
+          open={!!deletingTeam}
+          onOpenChange={(o) => { if (!o) setDeletingTeam(null); }}
+          entity="team"
+          name={deletingTeam?.name}
+          details={
+            deletingTeam
+              ? `Its ${deletingTeam.member_count} fellow${deletingTeam.member_count === 1 ? '' : 's'} will be unassigned (not deleted). The team's ${deletingTeam.sprint_count} sprint${deletingTeam.sprint_count === 1 ? '' : 's'} and their meetings will be deleted.`
+              : undefined
+          }
+          onConfirm={() => teamsAPI.delete(deletingTeam!.id)}
+          onDeleted={() => {
+            toast(`Team "${deletingTeam?.name}" deleted.`, 'success');
+            setDeletingTeam(null);
+            fetchTeams();
+          }}
+        />
 
         {/* Create/Edit Modal */}
         <Modal

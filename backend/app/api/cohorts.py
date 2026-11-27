@@ -9,6 +9,11 @@ from app.database import get_db
 from app.models.cohort import Cohort, CohortStatus
 from app.models.fellow import Fellow, FellowStatus
 from app.services.notification_service import create_notification
+from app.middleware.auth import require_admin
+from app.models.user import User
+from app.models.applicant import Applicant
+from app.models.team import Team
+from sqlalchemy import delete as sa_delete, update as sa_update, select as sa_select, func as sa_func
 from pydantic import BaseModel
 from datetime import date
 
@@ -219,3 +224,20 @@ async def graduate_cohort(
         "did_not_graduate": did_not_graduate,
         "cohort_status": "completed",
     }
+
+@router.delete("/{cohort_id}", status_code=204)
+async def delete_cohort(
+    cohort_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a cohort (admin only). Refused while it still has applicants, fellows or teams."""
+    cohort = (await db.execute(sa_select(Cohort).where(Cohort.id == cohort_id))).scalar_one_or_none()
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+    for model, label in ((Applicant, "applicants"), (Fellow, "fellows"), (Team, "teams")):
+        n = (await db.execute(sa_select(sa_func.count()).select_from(model).where(model.cohort_id == cohort_id))).scalar() or 0
+        if n:
+            raise HTTPException(status_code=409, detail=f"Cohort still has {n} {label}. Remove or move them first.")
+    await db.execute(sa_delete(Cohort).where(Cohort.id == cohort_id))
+    await db.commit()

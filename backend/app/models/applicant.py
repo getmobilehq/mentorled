@@ -10,6 +10,7 @@ from app.database import Base
 class ApplicantRole(str, enum.Enum):
     PRODUCT_MANAGER = "product_manager"
     PRODUCT_DESIGNER = "product_designer"
+    PROJECT_MANAGER = "project_manager"
     FRONTEND = "frontend"
     BACKEND = "backend"
     QA = "qa"

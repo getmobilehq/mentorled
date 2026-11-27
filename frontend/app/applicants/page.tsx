@@ -12,6 +12,8 @@ import { TableSkeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { ConfirmDelete, apiErrorMessage } from '@/components/ui/ConfirmDelete';
+import { useToast } from '@/components/ui/Toast';
 import { applicantsAPI, cohortsAPI } from '@/lib/api';
 import {
   ExternalLink,
@@ -23,10 +25,57 @@ import {
   CheckCircle,
   Award,
   AlertTriangle,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
-import type { Applicant, ApplicantJourney, JourneyEventType, Cohort } from '@/types';
+import type { Applicant, ApplicantJourney, JourneyEventType, Cohort, ApplicantRole, ApplicantStatus } from '@/types';
+
+const ROLE_LABELS: Record<string, string> = {
+  product_manager: 'Product Manager',
+  product_designer: 'Product Designer',
+  project_manager: 'Project Manager',
+  frontend: 'Frontend',
+  backend: 'Backend',
+  qa: 'QA',
+};
+
+const formatRole = (role: string) =>
+  ROLE_LABELS[role] || role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+type ApplicantForm = {
+  cohort_id: string;
+  name: string;
+  email: string;
+  role: ApplicantRole;
+  status: ApplicantStatus;
+  portfolio_url: string;
+  github_url: string;
+  linkedin_url: string;
+  project_description: string;
+  time_commitment: boolean;
+};
+
+const EMPTY_FORM: ApplicantForm = {
+  cohort_id: '',
+  name: '',
+  email: '',
+  role: 'frontend',
+  status: 'applied',
+  portfolio_url: '',
+  github_url: '',
+  linkedin_url: '',
+  project_description: '',
+  time_commitment: false,
+};
+
+const inputClass =
+  'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100';
+const labelClass = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 
 function ApplicantsPageContent() {
+  const { toast } = useToast();
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -130,13 +179,85 @@ function ApplicantsPageContent() {
     { value: 'withdrawn', label: 'Withdrawn' },
   ];
 
-  const roleOptions = [
-    { value: 'product_manager', label: 'Product Manager' },
-    { value: 'product_designer', label: 'Product Designer' },
-    { value: 'frontend', label: 'Frontend' },
-    { value: 'backend', label: 'Backend' },
-    { value: 'qa', label: 'QA' },
-  ];
+  const roleOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }));
+
+  // Create / edit modal state
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingApplicant, setEditingApplicant] = useState<Applicant | null>(null);
+  const [form, setForm] = useState<ApplicantForm>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Delete state
+  const [deleteTarget, setDeleteTarget] = useState<Applicant | null>(null);
+
+  const setField = <K extends keyof ApplicantForm>(key: K, value: ApplicantForm[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  const openCreate = () => {
+    setEditingApplicant(null);
+    setForm({ ...EMPTY_FORM, cohort_id: selectedCohort || cohorts[0]?.id || '' });
+    setFormError(null);
+    setFormOpen(true);
+  };
+
+  const openEdit = (applicant: Applicant) => {
+    setEditingApplicant(applicant);
+    setForm({
+      cohort_id: applicant.cohort_id,
+      name: applicant.name,
+      email: applicant.email,
+      role: applicant.role,
+      status: applicant.status,
+      portfolio_url: applicant.portfolio_url || '',
+      github_url: applicant.github_url || '',
+      linkedin_url: applicant.linkedin_url || '',
+      project_description: applicant.project_description || '',
+      time_commitment: !!applicant.time_commitment,
+    });
+    setFormError(null);
+    setFormOpen(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    const optional = {
+      portfolio_url: form.portfolio_url.trim() || null,
+      github_url: form.github_url.trim() || null,
+      linkedin_url: form.linkedin_url.trim() || null,
+      project_description: form.project_description.trim() || null,
+      time_commitment: form.time_commitment,
+    };
+    if (!editingApplicant) {
+      if (!form.cohort_id || !form.name.trim() || !form.email.trim()) {
+        setFormError('Cohort, name and email are required.');
+        return;
+      }
+    }
+    setSaving(true);
+    try {
+      if (editingApplicant) {
+        await applicantsAPI.update(editingApplicant.id, { ...optional, status: form.status });
+        toast(`Updated ${editingApplicant.name}`, 'success');
+      } else {
+        await applicantsAPI.create({
+          cohort_id: form.cohort_id,
+          name: form.name.trim(),
+          email: form.email.trim(),
+          role: form.role,
+          ...optional,
+        });
+        toast(`Added ${form.name.trim()}`, 'success');
+      }
+      setFormOpen(false);
+      await fetchApplicants();
+    } catch (err) {
+      setFormError(apiErrorMessage(err, editingApplicant ? 'Could not update applicant.' : 'Could not create applicant.'));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Journey modal state
   const [journeyOpen, setJourneyOpen] = useState(false);
@@ -188,8 +309,14 @@ function ApplicantsPageContent() {
               View and manage all program applicants
             </p>
           </div>
-          <div className="text-sm text-gray-600">
-            {filteredApplicants.length} of {applicants.length} applicants
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {filteredApplicants.length} of {applicants.length} applicants
+            </div>
+            <Button onClick={openCreate}>
+              <Plus className="mr-1 h-4 w-4" />
+              Add applicant
+            </Button>
           </div>
         </div>
 
@@ -316,9 +443,7 @@ function ApplicantsPageContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="capitalize">
-                          {applicant.role.replace('_', ' ')}
-                        </span>
+                        <span>{formatRole(applicant.role)}</span>
                       </TableCell>
                       <TableCell>
                         <Badge variant={getStatusBadgeVariant(applicant.status)}>
@@ -358,14 +483,34 @@ function ApplicantsPageContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleViewJourney(applicant.id)}
-                        >
-                          <Eye className="mr-1 h-3 w-3" />
-                          Journey
-                        </Button>
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleViewJourney(applicant.id)}
+                          >
+                            <Eye className="mr-1 h-3 w-3" />
+                            Journey
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openEdit(applicant); }}
+                            aria-label={`Edit ${applicant.name}`}
+                            title="Edit"
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-gray-700 dark:hover:text-blue-400"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(applicant); }}
+                            aria-label={`Delete ${applicant.name}`}
+                            title="Delete"
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -399,8 +544,8 @@ function ApplicantsPageContent() {
               <div className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3">
                 <div>
                   <p className="text-sm text-gray-500">{journey.applicant.email}</p>
-                  <p className="text-sm text-gray-500 capitalize mt-0.5">
-                    {journey.applicant.role.replace('_', ' ')}
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    {formatRole(journey.applicant.role)}
                   </p>
                 </div>
                 <Badge variant={getStatusBadgeVariant(journey.applicant.status)}>
@@ -534,6 +679,186 @@ function ApplicantsPageContent() {
             <div className="py-8 text-center text-gray-500">Failed to load journey data.</div>
           )}
         </Modal>
+
+        {/* Create / Edit Applicant Modal */}
+        <Modal
+          open={formOpen}
+          onOpenChange={(o) => { if (!saving) setFormOpen(o); }}
+          title={editingApplicant ? `Edit applicant - ${editingApplicant.name}` : 'Add applicant'}
+          size="lg"
+        >
+          <form onSubmit={handleSave} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            {editingApplicant ? (
+              <div className="rounded-lg bg-gray-50 px-4 py-3 text-sm dark:bg-gray-900/50">
+                <p className="font-medium text-gray-900 dark:text-white">{editingApplicant.name}</p>
+                <p className="text-gray-500 dark:text-gray-400">{editingApplicant.email}</p>
+                <p className="mt-0.5 text-gray-500 dark:text-gray-400">
+                  {formatRole(editingApplicant.role)}
+                  {' · '}
+                  {cohorts.find((c) => c.id === editingApplicant.cohort_id)?.name || 'Unknown cohort'}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">Name, email, role and cohort can&apos;t be changed.</p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label htmlFor="applicant-cohort" className={labelClass}>Cohort *</label>
+                  <select
+                    id="applicant-cohort"
+                    required
+                    value={form.cohort_id}
+                    onChange={(e) => setField('cohort_id', e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="" disabled>Select a cohort</option>
+                    {cohorts.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="applicant-name" className={labelClass}>Name *</label>
+                    <input
+                      id="applicant-name"
+                      required
+                      value={form.name}
+                      onChange={(e) => setField('name', e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="applicant-email" className={labelClass}>Email *</label>
+                    <input
+                      id="applicant-email"
+                      type="email"
+                      required
+                      value={form.email}
+                      onChange={(e) => setField('email', e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="applicant-role" className={labelClass}>Role *</label>
+                  <select
+                    id="applicant-role"
+                    value={form.role}
+                    onChange={(e) => setField('role', e.target.value as ApplicantRole)}
+                    className={inputClass}
+                  >
+                    {roleOptions.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {editingApplicant && (
+              <div>
+                <label htmlFor="applicant-status" className={labelClass}>Status</label>
+                <select
+                  id="applicant-status"
+                  value={form.status}
+                  onChange={(e) => setField('status', e.target.value as ApplicantStatus)}
+                  className={inputClass}
+                >
+                  {statusOptions.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <label htmlFor="applicant-portfolio" className={labelClass}>Portfolio URL</label>
+                <input
+                  id="applicant-portfolio"
+                  type="url"
+                  value={form.portfolio_url}
+                  onChange={(e) => setField('portfolio_url', e.target.value)}
+                  placeholder="https://"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="applicant-github" className={labelClass}>GitHub URL</label>
+                <input
+                  id="applicant-github"
+                  type="url"
+                  value={form.github_url}
+                  onChange={(e) => setField('github_url', e.target.value)}
+                  placeholder="https://github.com/"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="applicant-linkedin" className={labelClass}>LinkedIn URL</label>
+                <input
+                  id="applicant-linkedin"
+                  type="url"
+                  value={form.linkedin_url}
+                  onChange={(e) => setField('linkedin_url', e.target.value)}
+                  placeholder="https://linkedin.com/in/"
+                  className={inputClass}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="applicant-project" className={labelClass}>Project description</label>
+              <textarea
+                id="applicant-project"
+                rows={3}
+                value={form.project_description}
+                onChange={(e) => setField('project_description', e.target.value)}
+                className={inputClass}
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={form.time_commitment}
+                onChange={(e) => setField('time_commitment', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+              />
+              Can commit the required time
+            </label>
+
+            {formError && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                {formError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 border-t pt-4 dark:border-gray-700">
+              <Button type="button" variant="secondary" onClick={() => setFormOpen(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {editingApplicant ? 'Save changes' : 'Add applicant'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        <ConfirmDelete
+          open={!!deleteTarget}
+          onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+          entity="applicant"
+          name={deleteTarget?.name}
+          details="Their evaluations and submissions will also be deleted."
+          onConfirm={() => applicantsAPI.delete(deleteTarget!.id)}
+          onDeleted={() => {
+            toast(`Deleted ${deleteTarget?.name ?? 'applicant'}`, 'success');
+            setDeleteTarget(null);
+            fetchApplicants();
+          }}
+        />
         </div>
         )}
       </AppLayout>

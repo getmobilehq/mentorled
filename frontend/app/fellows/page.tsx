@@ -9,6 +9,7 @@ import { PageSkeleton } from '@/components/ui/Skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDelete, apiErrorMessage } from '@/components/ui/ConfirmDelete';
 import { fellowsAPI, deliveryAPI, checkInsAPI, riskAPI, cohortsAPI, attendanceAPI, teamsAPI } from '@/lib/api';
 import {
   Users,
@@ -20,8 +21,29 @@ import {
   Eye,
   Search,
   Calendar,
+  Pencil,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import type { Fellow, RiskAssessment, Cohort, CheckIn, RiskAssessmentDetail, Team, Attendance } from '@/types';
+
+const FELLOW_STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'on_track', label: 'On Track' },
+  { value: 'monitor', label: 'Monitor' },
+  { value: 'at_risk', label: 'At Risk' },
+  { value: 'critical', label: 'Critical' },
+  { value: 'warning', label: 'Warning' },
+  { value: 'final_warning', label: 'Final Warning' },
+  { value: 'removed', label: 'Removed' },
+  { value: 'graduated', label: 'Graduated' },
+  { value: 'graduated_distinction', label: 'Graduated (Distinction)' },
+  { value: 'did_not_graduate', label: 'Did Not Graduate' },
+];
+
+const editInputClass =
+  'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100';
+const editLabelClass = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 
 export default function FellowsPage() {
   const { toast } = useToast();
@@ -58,6 +80,22 @@ export default function FellowsPage() {
   const [fellowRiskHistory, setFellowRiskHistory] = useState<RiskAssessmentDetail[]>([]);
   const [fellowAttendance, setFellowAttendance] = useState<Attendance[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Edit modal
+  const [editFellow, setEditFellow] = useState<Fellow | null>(null);
+  const [editForm, setEditForm] = useState({
+    status: '',
+    team_id: '',
+    milestone_1_score: '',
+    milestone_2_score: '',
+    milestone_3_score: '',
+    final_score: '',
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Delete
+  const [deleteFellow, setDeleteFellow] = useState<Fellow | null>(null);
 
   useEffect(() => {
     fetchCohorts();
@@ -166,6 +204,51 @@ export default function FellowsPage() {
     }
   };
 
+  const handleOpenEdit = (fellow: Fellow, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditFellow(fellow);
+    setEditForm({
+      status: fellow.status,
+      team_id: fellow.team_id || '',
+      milestone_1_score: fellow.milestone_1_score?.toString() ?? '',
+      milestone_2_score: fellow.milestone_2_score?.toString() ?? '',
+      milestone_3_score: fellow.milestone_3_score?.toString() ?? '',
+      final_score: fellow.final_score?.toString() ?? '',
+    });
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editFellow) return;
+    const toNum = (v: string) => (v.trim() === '' ? null : parseFloat(v));
+    const data = {
+      status: editForm.status,
+      team_id: editForm.team_id || null,
+      milestone_1_score: toNum(editForm.milestone_1_score),
+      milestone_2_score: toNum(editForm.milestone_2_score),
+      milestone_3_score: toNum(editForm.milestone_3_score),
+      final_score: toNum(editForm.final_score),
+    };
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      await fellowsAPI.update(editFellow.id, data);
+      toast(`Updated ${editFellow.name}`, 'success');
+      setEditFellow(null);
+      await fetchFellows();
+    } catch (err) {
+      setEditError(apiErrorMessage(err, 'Could not update fellow.'));
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const editTeams = useMemo(
+    () => (editFellow ? teams.filter(t => t.cohort_id === editFellow.cohort_id) : []),
+    [teams, editFellow]
+  );
+
   const getRiskBadgeVariant = (level?: string) => {
     const map: Record<string, 'success' | 'info' | 'warning' | 'danger'> = {
       on_track: 'success',
@@ -190,8 +273,8 @@ export default function FellowsPage() {
   const stats = {
     total: fellows.length,
     active: fellows.filter(f => f.status === 'active').length,
-    at_risk: fellows.filter(f => ['at_risk', 'warned_once', 'warned_twice'].includes(f.status)).length,
-    completed: fellows.filter(f => f.status === 'completed').length,
+    at_risk: fellows.filter(f => ['at_risk', 'critical', 'warning', 'final_warning'].includes(f.status)).length,
+    completed: fellows.filter(f => ['graduated', 'graduated_distinction'].includes(f.status)).length,
   };
 
   const riskStats = {
@@ -294,7 +377,7 @@ export default function FellowsPage() {
                 <CheckCircle className="h-6 w-6 text-purple-600" />
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Completed</p>
+                <p className="text-sm font-medium text-gray-600">Graduated</p>
                 <p className="text-2xl font-bold text-purple-600">{stats.completed}</p>
               </div>
             </div>
@@ -475,6 +558,24 @@ export default function FellowsPage() {
                               </>
                             )}
                           </Button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleOpenEdit(fellow, e)}
+                            aria-label={`Edit ${fellow.name}`}
+                            title="Edit"
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-gray-700 dark:hover:text-blue-400"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setDeleteFellow(fellow); }}
+                            aria-label={`Delete ${fellow.name}`}
+                            title="Delete"
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -798,6 +899,113 @@ export default function FellowsPage() {
             </div>
           ) : null}
         </Modal>
+
+        {/* Edit Fellow Modal */}
+        <Modal
+          open={!!editFellow}
+          onOpenChange={(o) => { if (!o && !savingEdit) setEditFellow(null); }}
+          title={editFellow ? `Edit fellow - ${editFellow.name}` : 'Edit fellow'}
+        >
+          {editFellow && (
+            <form onSubmit={handleSaveEdit} className="space-y-5">
+              <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-900/50">
+                <p className="font-medium text-gray-900 dark:text-white">{editFellow.name}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <span className="capitalize">{editFellow.role.replace(/_/g, ' ')}</span>
+                  {' · '}
+                  {cohorts.find(c => c.id === editFellow.cohort_id)?.name || 'Unknown cohort'}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="fellow-status" className={editLabelClass}>Status</label>
+                  <select
+                    id="fellow-status"
+                    value={editForm.status}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, status: e.target.value }))}
+                    className={editInputClass}
+                  >
+                    {!FELLOW_STATUS_OPTIONS.some(o => o.value === editForm.status) && editForm.status && (
+                      <option value={editForm.status}>{editForm.status.replace(/_/g, ' ')}</option>
+                    )}
+                    {FELLOW_STATUS_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="fellow-team" className={editLabelClass}>Team</label>
+                  <select
+                    id="fellow-team"
+                    value={editForm.team_id}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, team_id: e.target.value }))}
+                    className={editInputClass}
+                  >
+                    <option value="">No team</option>
+                    {editTeams.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  {editTeams.length === 0 && (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">No teams in this cohort yet.</p>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { key: 'milestone_1_score', label: 'Milestone 1 Score (%)' },
+                  { key: 'milestone_2_score', label: 'Milestone 2 Score (%)' },
+                  { key: 'milestone_3_score', label: 'Milestone 3 Score (%)' },
+                  { key: 'final_score', label: 'Final Score (0-5)' },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <label htmlFor={`fellow-${key}`} className={editLabelClass}>{label}</label>
+                    <input
+                      id={`fellow-${key}`}
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max={key === 'final_score' ? 5 : 100}
+                      value={(editForm as Record<string, string>)[key]}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, [key]: e.target.value }))}
+                      className={editInputClass}
+                      placeholder={key === 'final_score' ? '0.0 - 5.0' : '0 - 100'}
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Leave a score blank to clear it.</p>
+              {editError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  {editError}
+                </div>
+              )}
+              <div className="flex justify-end gap-3 border-t pt-4 dark:border-gray-700">
+                <Button type="button" variant="secondary" onClick={() => setEditFellow(null)} disabled={savingEdit}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" disabled={savingEdit}>
+                  {savingEdit && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save changes
+                </Button>
+              </div>
+            </form>
+          )}
+        </Modal>
+
+        <ConfirmDelete
+          open={!!deleteFellow}
+          onOpenChange={(o) => { if (!o) setDeleteFellow(null); }}
+          entity="fellow"
+          name={deleteFellow?.name}
+          details="The applicant record is kept."
+          onConfirm={() => fellowsAPI.delete(deleteFellow!.id)}
+          onDeleted={() => {
+            toast(`Deleted ${deleteFellow?.name ?? 'fellow'}`, 'success');
+            setDeleteFellow(null);
+            fetchFellows();
+          }}
+        />
       </div>
     </AppLayout>
   );

@@ -12,6 +12,9 @@ from app.models.fellow import Fellow
 from app.models.sprint import Sprint
 from app.models.mentor import Mentor
 from app.schemas.team import TeamCreate, TeamUpdate
+from app.middleware.auth import require_admin
+from app.models.user import User
+from sqlalchemy import delete as sa_delete, update as sa_update, select as sa_select, func as sa_func
 
 router = APIRouter(prefix="/teams")
 
@@ -205,3 +208,17 @@ async def list_available_mentors(db: AsyncSession = Depends(get_db)):
         }
         for m in mentors
     ]
+
+@router.delete("/{team_id}", status_code=204)
+async def delete_team(
+    team_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a team and its sprints/meetings (admin only). Fellows are unassigned, not deleted."""
+    team = (await db.execute(sa_select(Team).where(Team.id == team_id))).scalar_one_or_none()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    await db.execute(sa_update(Fellow).where(Fellow.team_id == team_id).values(team_id=None))
+    await db.execute(sa_delete(Team).where(Team.id == team_id))
+    await db.commit()

@@ -83,6 +83,11 @@ class UserCreate(BaseModel):
     role: UserRole = UserRole.VIEWER
 
 
+class AdminPasswordReset(BaseModel):
+    """Admin sets a new password for a user"""
+    new_password: str = Field(..., min_length=8, max_length=72)
+
+
 class PasswordChange(BaseModel):
     """Password change request"""
     current_password: str

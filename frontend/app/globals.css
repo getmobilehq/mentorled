@@ -73,3 +73,8 @@ button, a, [class*="transition"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Dashboard: SVG line draw-on */
+@keyframes dash-draw {
+  to { stroke-dashoffset: 0; }
+}

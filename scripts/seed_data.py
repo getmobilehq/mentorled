@@ -62,7 +62,7 @@ async def seed_database():
                 admin_user = User(
                     email="admin@mentorled.com",
                     username="admin",
-                    full_name="Admin User",
+                    full_name="Olamide Johnson",
                     hashed_password=hash_password("admin123"),
                     role=UserRole.ADMIN,
                     is_active=True,

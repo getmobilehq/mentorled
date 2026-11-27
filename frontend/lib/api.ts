@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import type { DashboardOverview } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -89,6 +90,10 @@ export const authAPI = {
     api.post('/api/auth/users', data),
   updateUser: (id: string, data: { full_name?: string; email?: string; role?: string; is_active?: boolean }) =>
     api.put(`/api/auth/users/${id}`, data),
+  deleteUser: (id: string) =>
+    api.delete(`/api/auth/users/${id}`),
+  resetUserPassword: (id: string, newPassword: string) =>
+    api.post(`/api/auth/users/${id}/reset-password`, { new_password: newPassword }),
 };
 
 // API endpoints
@@ -100,7 +105,9 @@ export const applicantsAPI = {
   create: (data: any) =>
     api.post('/api/applicants/', data),
   update: (id: string, data: any) =>
-    api.put(`/api/applicants/${id}`, data),
+    api.patch(`/api/applicants/${id}`, data),
+  delete: (id: string) =>
+    api.delete(`/api/applicants/${id}`),
   getJourney: (id: string) =>
     api.get(`/api/applicants/${id}/journey`),
   me: () =>
@@ -135,6 +142,8 @@ export const cohortsAPI = {
     api.put(`/api/cohorts/${id}`, data),
   updateStatus: (id: string, status: string) =>
     api.patch(`/api/cohorts/${id}/status`, { status }),
+  delete: (id: string) =>
+    api.delete(`/api/cohorts/${id}`),
   graduate: (id: string, thresholds?: { distinction_threshold?: number; pass_threshold?: number }) =>
     api.post(`/api/cohorts/${id}/graduate`, thresholds || {}),
 };
@@ -154,6 +163,8 @@ export const fellowsAPI = {
     api.patch(`/api/fellows/${id}`, data),
   updateMilestones: (id: string, data: any) =>
     api.patch(`/api/fellows/${id}/milestones`, data),
+  delete: (id: string) =>
+    api.delete(`/api/fellows/${id}`),
 };
 
 export const deliveryAPI = {
@@ -192,6 +203,8 @@ export const placementAPI = {
     api.put(`/api/placement/opportunities/${id}`, data),
   updateOpportunityStatus: (id: string, status: string) =>
     api.patch(`/api/placement/opportunities/${id}/status`, { status }),
+  deleteOpportunity: (id: string) =>
+    api.delete(`/api/placement/opportunities/${id}`),
   getFellowMatches: (fellowId: string) =>
     api.get(`/api/placement/matches/${fellowId}`),
   updateMatchStatus: (matchId: string, status: string) =>
@@ -269,6 +282,7 @@ export const warningsAPI = {
 };
 
 export const analyticsAPI = {
+  getOverview: () => api.get<DashboardOverview>('/api/analytics/overview'),
   getDashboard: (cohortId?: string) =>
     api.get('/api/analytics/dashboard', { params: { cohort_id: cohortId } }),
   getConversionFunnel: (cohortId?: string) =>
@@ -332,6 +346,8 @@ export const challengesAPI = {
     api.put(`/api/challenges/${id}`, data),
   updateStatus: (id: string, status: string) =>
     api.patch(`/api/challenges/${id}/status`, { status }),
+  delete: (id: string) =>
+    api.delete(`/api/challenges/${id}`),
   getSubmissions: (id: string) =>
     api.get(`/api/challenges/${id}/submissions`),
   getPublic: (shareToken: string) =>
@@ -381,6 +397,8 @@ export const teamsAPI = {
     api.post('/api/teams/', data),
   update: (id: string, data: any) =>
     api.put(`/api/teams/${id}`, data),
+  delete: (id: string) =>
+    api.delete(`/api/teams/${id}`),
   assignFellow: (teamId: string, fellowId: string) =>
     api.post(`/api/teams/${teamId}/assign-fellow?fellow_id=${fellowId}`),
   removeFellow: (teamId: string, fellowId: string) =>

@@ -1,533 +1,258 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { PageSkeleton } from '@/components/ui/Skeleton';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { applicantsAPI, screeningAPI, healthAPI, analyticsAPI, challengesAPI, teamsAPI, sprintsAPI, meetingsAPI, activityAPI } from '@/lib/api';
-import {
-  Users,
-  ClipboardCheck,
-  AlertCircle,
-  DollarSign,
-  TrendingUp,
-  CheckCircle,
-  Activity,
-  Flag,
-  Calendar,
-  ArrowRight,
-  Repeat,
-  Target,
-  Clock,
-  Bell,
-  Shield,
-  AlertTriangle,
-  Zap,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { Applicant, QueueStats, HealthCheck, ChallengeAnalytics, Team, Sprint, Meeting } from '@/types';
+import { ArrowUpRight, GraduationCap, RefreshCw, Target, Users, BarChart3, ListChecks, FileCheck2 } from 'lucide-react';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { PageSkeleton } from '@/components/ui/Skeleton';
+import { analyticsAPI } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import type { DashboardOverview } from '@/types';
+import { MetricCard, Sparkline, ProgressBar } from '@/components/dashboard/MetricCard';
+import { TrackBarChart, OutcomeDonut } from '@/components/dashboard/Charts';
+import { trackMeta } from '@/components/dashboard/theme';
+import { RecentSubmissions } from '@/components/dashboard/RecentSubmissions';
 
-interface AnalyticsDashboard {
-  applicants: { total: number; by_status: Record<string, number>; by_role: Record<string, number> };
-  fellows: { total: number; by_status: Record<string, number>; by_risk_level: Record<string, number> };
-  evaluations: { total: number; by_outcome: Record<string, number>; average_score: number; average_confidence: number; human_review_rate: number };
-  ai_usage: { total_ai_calls_30d: number; total_cost_30d_usd: number; average_cost_per_call: number };
+const REFRESH_MS = 60_000;
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
-interface ConversionFunnel {
-  applied: number;
-  screening: number;
-  eligible: number;
-  microship_submitted: number;
-  microship_evaluated: number;
-  accepted: number;
-  not_eligible: number;
-  conversion_rate: number;
+function Section({
+  title,
+  subtitle,
+  icon: Icon,
+  action,
+  delay = 0,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  icon: React.ElementType;
+  action?: React.ReactNode;
+  delay?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="animate-fade-up" style={{ animationDelay: `${delay}ms` }}>
+      <div className="mb-4 flex items-end justify-between gap-4">
+        <div className="flex items-center gap-2.5">
+          <Icon className="h-5 w-5 text-brand-600 dark:text-brand-400" />
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
+            {subtitle && <p className="text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>}
+          </div>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Panel({ title, subtitle, children, delay = 0 }: { title: string; subtitle?: string; children: React.ReactNode; delay?: number }) {
+  return (
+    <div
+      className="rounded-2xl border border-gray-200/80 bg-white p-6 shadow-sm transition-shadow duration-300 hover:shadow-lg dark:border-gray-700/80 dark:bg-gray-800 animate-fade-up"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className="mb-5">
+        <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
+        {subtitle && <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 export default function Dashboard() {
-  const [applicants, setApplicants] = useState<Applicant[]>([]);
-  const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
-  const [health, setHealth] = useState<HealthCheck | null>(null);
-  const [dashboard, setDashboard] = useState<AnalyticsDashboard | null>(null);
-  const [funnel, setFunnel] = useState<ConversionFunnel | null>(null);
-  const [challengeAnalytics, setChallengeAnalytics] = useState<ChallengeAnalytics | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [data, setData] = useState<DashboardOverview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
-  // Fellowship execution state
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
-  const [activityFeed, setActivityFeed] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetchDashboardData();
+  const load = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
+    try {
+      const res = await analyticsAPI.getOverview();
+      setData(res.data);
+      setError(null);
+      setUpdatedAt(new Date());
+    } catch (e) {
+      console.error('Error loading dashboard overview:', e);
+      setError('Could not load dashboard data. Is the backend running?');
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
-  const fetchDashboardData = async () => {
-    try {
-      const [applicantsRes, queueRes, healthRes, dashboardRes, funnelRes, challengeRes, teamsRes, sprintsRes, meetingsRes, activityRes] = await Promise.all([
-        applicantsAPI.list(),
-        screeningAPI.getQueue(),
-        healthAPI.check(),
-        analyticsAPI.getDashboard().catch(() => null),
-        analyticsAPI.getConversionFunnel().catch(() => null),
-        challengesAPI.getAnalytics().catch(() => null),
-        teamsAPI.list().catch(() => ({ data: [] })),
-        sprintsAPI.list().catch(() => ({ data: [] })),
-        meetingsAPI.upcoming(undefined, 7).catch(() => ({ data: [] })),
-        activityAPI.feed(10).catch(() => ({ data: [] })),
-      ]);
+  useEffect(() => {
+    load();
+    const id = setInterval(() => load(), REFRESH_MS);
+    return () => clearInterval(id);
+  }, [load]);
 
-      setApplicants(applicantsRes.data);
-      setQueueStats(queueRes.data);
-      setHealth(healthRes.data);
-      if (dashboardRes) setDashboard(dashboardRes.data);
-      if (funnelRes) setFunnel(funnelRes.data);
-      if (challengeRes) setChallengeAnalytics(challengeRes.data);
-      setTeams(teamsRes.data);
-      setSprints(sprintsRes.data);
-      setUpcomingMeetings(meetingsRes.data);
-      if (activityRes) setActivityFeed(activityRes.data);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const stats = [
-    {
-      name: 'Total Applicants',
-      value: dashboard?.applicants.total ?? applicants.length,
-      icon: Users,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
-    },
-    {
-      name: 'Active Fellows',
-      value: dashboard?.fellows.total ?? 0,
-      icon: TrendingUp,
-      color: 'text-green-600',
-      bgColor: 'bg-green-100',
-    },
-    {
-      name: 'AI Evaluations',
-      value: dashboard?.evaluations.total ?? 0,
-      icon: Activity,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
-    },
-    {
-      name: 'AI Cost (30d)',
-      value: `$${dashboard?.ai_usage.total_cost_30d_usd?.toFixed(2) ?? '0.00'}`,
-      icon: DollarSign,
-      color: 'text-yellow-600',
-      bgColor: 'bg-yellow-100',
-    },
-  ];
-
-  const recentApplicants = applicants.slice(0, 5);
+  const firstName = (user as { full_name?: string; username?: string } | null)?.full_name?.split(' ')[0]
+    || (user as { username?: string } | null)?.username;
 
   return (
     <AppLayout>
-      {loading ? (
+      {!data && !error ? (
         <PageSkeleton />
       ) : (
-        <div className="space-y-6">
-          {/* Page header */}
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-            <p className="mt-2 text-gray-600">
-              Welcome to the MentorLed AI-Ops Platform
-            </p>
-          </div>
-
-          {/* System Health */}
-          {health && (
-            <Card>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
-                    <CheckCircle className="h-6 w-6 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">System Status</p>
-                    <p className="text-sm text-gray-600">{health.service} - v{health.version}</p>
-                  </div>
-                </div>
-                <Badge variant="success">{health.status}</Badge>
+        <div className="space-y-10">
+          {/* Hero */}
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#23292E] via-[#1f3a33] to-[#2b6b4a] px-6 py-8 text-white shadow-xl sm:px-10 animate-fade-up">
+            <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-brand-green/30 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-sky-400/20 blur-3xl" />
+            <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="flex items-center gap-2 text-sm font-medium text-emerald-200">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-300" />
+                  </span>
+                  Live programme data
+                </p>
+                <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
+                  {greeting()}{firstName ? `, ${firstName}` : ''}
+                </h1>
+                <p className="mt-2 max-w-xl text-white/70">
+                  {data
+                    ? `${data.metrics.total_applications.toLocaleString()} applications, ${data.metrics.alumni} alumni and ${data.metrics.cohorts} cohorts across ${data.metrics.tracks} tracks.`
+                    : 'MentorLed programme overview'}
+                </p>
               </div>
-            </Card>
-          )}
-
-          {/* Stats grid */}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {stats.map((stat) => {
-              const Icon = stat.icon;
-              return (
-                <Card key={stat.name}>
-                  <div className="flex items-center">
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${stat.bgColor}`}>
-                      <Icon className={`h-6 w-6 ${stat.color}`} />
-                    </div>
-                    <div className="ml-4">
-                      <p className="text-sm font-medium text-gray-600">{stat.name}</p>
-                      <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
+              <div className="flex items-center gap-3">
+                {updatedAt && (
+                  <span className="text-xs text-white/60">
+                    Updated {updatedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                  </span>
+                )}
+                <button
+                  onClick={() => load(true)}
+                  disabled={refreshing}
+                  className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-medium backdrop-blur transition-all hover:bg-white/20 active:scale-95 disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* Conversion Funnel */}
-          {funnel && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Application Pipeline</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  {[
-                    { label: 'Applied', value: funnel.applied, color: 'bg-blue-100 text-blue-800' },
-                    { label: 'Screening', value: funnel.screening, color: 'bg-yellow-100 text-yellow-800' },
-                    { label: 'Eligible', value: funnel.eligible, color: 'bg-purple-100 text-purple-800' },
-                    { label: 'Microship', value: funnel.microship_submitted, color: 'bg-teal-100 text-teal-800' },
-                    { label: 'Accepted', value: funnel.accepted, color: 'bg-green-100 text-green-800' },
-                  ].map((stage, idx, arr) => (
-                    <React.Fragment key={stage.label}>
-                      <div className="text-center flex-1">
-                        <p className="text-2xl font-bold text-gray-900">{stage.value}</p>
-                        <p className={`text-xs font-medium mt-1 inline-block px-2 py-0.5 rounded-full ${stage.color}`}>
-                          {stage.label}
-                        </p>
-                      </div>
-                      {idx < arr.length - 1 && (
-                        <ArrowRight className="h-5 w-5 text-gray-300 flex-shrink-0" />
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-                <div className="text-center mt-4 pt-3 border-t border-gray-100">
-                  <span className="text-sm text-gray-500">Overall Conversion: </span>
-                  <span className="text-lg font-bold text-gray-900">{funnel.conversion_rate.toFixed(1)}%</span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Fellowship Execution Section */}
-          {sprints.length > 0 && (
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              {/* Active Sprints */}
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Active Sprints</CardTitle>
-                    <Link href="/sprints">
-                      <Button variant="ghost" size="sm">Sprint Board</Button>
-                    </Link>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {(() => {
-                    const activeSprints = sprints.filter(s => s.status === 'active');
-                    if (activeSprints.length === 0) {
-                      return <p className="text-center text-sm text-gray-500 py-4">No active sprints</p>;
-                    }
-                    return (
-                      <div className="space-y-3">
-                        {activeSprints.map(sprint => {
-                          const team = teams.find(t => t.id === sprint.team_id);
-                          const progressPct = sprint.objective_count
-                            ? Math.round(((sprint.completed_objectives || 0) / sprint.objective_count) * 100)
-                            : 0;
-                          return (
-                            <div key={sprint.id} className="rounded-lg border border-gray-200 p-3">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-sm font-semibold text-gray-900">
-                                  {team?.name || 'Team'} — Sprint {sprint.sprint_number}
-                                </span>
-                                <Badge variant="info">{sprint.status}</Badge>
-                              </div>
-                              {sprint.goal && (
-                                <p className="text-xs text-gray-500 mb-2 truncate">{sprint.goal}</p>
-                              )}
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 bg-gray-200 rounded-full h-2">
-                                  <div
-                                    className="h-2 rounded-full bg-green-500 transition-all"
-                                    style={{ width: `${progressPct}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs font-medium text-gray-600">
-                                  {sprint.completed_objectives || 0}/{sprint.objective_count || 0}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
-
-              {/* Fellowship Overview */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Fellowship Overview</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center p-3 bg-green-50 rounded-lg">
-                      <p className="text-sm font-medium text-green-900">Active Teams</p>
-                      <p className="mt-1 text-2xl font-bold text-green-600">
-                        {teams.filter(t => t.status === 'active').length}
-                      </p>
-                    </div>
-                    <div className="text-center p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm font-medium text-blue-900">Total Sprints</p>
-                      <p className="mt-1 text-2xl font-bold text-blue-600">{sprints.length}</p>
-                    </div>
-                    <div className="text-center p-3 bg-purple-50 rounded-lg">
-                      <p className="text-sm font-medium text-purple-900">Completed</p>
-                      <p className="mt-1 text-2xl font-bold text-purple-600">
-                        {sprints.filter(s => s.status === 'completed').length}
-                      </p>
-                    </div>
-                    <div className="text-center p-3 bg-orange-50 rounded-lg">
-                      <p className="text-sm font-medium text-orange-900">Upcoming Meetings</p>
-                      <p className="mt-1 text-2xl font-bold text-orange-600">{upcomingMeetings.length}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+              {error}
             </div>
           )}
 
-          {/* Two column layout */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {/* Recent Applicants */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Recent Applicants</CardTitle>
-                  <Link href="/applicants">
-                    <Button variant="ghost" size="sm">View All</Button>
-                  </Link>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {recentApplicants.length === 0 ? (
-                  <p className="text-center text-sm text-gray-500 py-8">No applicants yet</p>
-                ) : (
-                  <div className="space-y-4">
-                    {recentApplicants.map((applicant) => (
-                      <div key={applicant.id} className="flex items-center justify-between border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                        <div>
-                          <p className="font-medium text-gray-900">{applicant.name}</p>
-                          <p className="text-sm text-gray-600">{applicant.role.replace('_', ' ')}</p>
-                        </div>
-                        <Badge variant={applicant.status === 'accepted' ? 'success' : 'default'}>
-                          {applicant.status}
-                        </Badge>
+          {data && (
+            <>
+              {/* Section 1 — headline metrics */}
+              <Section title="Programme at a glance" subtitle="Headline numbers across every cohort" icon={Target} delay={100}>
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                  <MetricCard
+                    label="Total applications"
+                    value={data.metrics.total_applications}
+                    icon={Users}
+                    gradient="from-violet-500 to-fuchsia-500"
+                    accent="#8b5cf6"
+                    caption={
+                      <>
+                        <span className="font-semibold text-violet-600 dark:text-violet-400">{data.metrics.committed}</span> pledged full-time commitment
+                      </>
+                    }
+                    footer={<Sparkline data={data.applications_by_month.map((m) => m.count)} color="#8b5cf6" />}
+                    delay={150}
+                  />
+                  <MetricCard
+                    label="Alumni"
+                    value={data.metrics.alumni}
+                    icon={GraduationCap}
+                    gradient="from-emerald-500 to-teal-500"
+                    accent="#10b981"
+                    caption={<>Graduated fellows across {data.by_track.filter((t) => t.alumni > 0).length} tracks</>}
+                    footer={
+                      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                        {data.by_track
+                          .filter((t) => t.alumni > 0)
+                          .map((t, i) => (
+                            <div
+                              key={t.track}
+                              title={`${trackMeta(t.track).label}: ${t.alumni}`}
+                              className="h-full origin-left animate-grow-right transition-opacity hover:opacity-80"
+                              style={{
+                                width: `${(t.alumni / Math.max(data.metrics.alumni, 1)) * 100}%`,
+                                background: trackMeta(t.track).color,
+                                animationDelay: `${300 + i * 80}ms`,
+                              }}
+                            />
+                          ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    }
+                    delay={250}
+                  />
+                  <MetricCard
+                    label="Selection rate"
+                    value={data.metrics.selection_rate}
+                    decimals={1}
+                    suffix="%"
+                    icon={FileCheck2}
+                    gradient="from-sky-500 to-blue-600"
+                    accent="#0ea5e9"
+                    caption={
+                      <>
+                        <span className="font-semibold text-sky-600 dark:text-sky-400">{data.metrics.selected}</span> of {data.metrics.decided} screened applicants progressed
+                      </>
+                    }
+                    footer={<ProgressBar percent={data.metrics.selection_rate} gradient="from-sky-400 to-blue-600" />}
+                    delay={350}
+                  />
+                </div>
+              </Section>
 
-            {/* Challenge Activity */}
-            {challengeAnalytics && challengeAnalytics.total_challenges > 0 ? (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Challenge Activity</CardTitle>
-                    <Link href="/challenges">
-                      <Button variant="ghost" size="sm">View All</Button>
-                    </Link>
+              {/* Section 2 — charts */}
+              <Section title="Pipeline insights" subtitle="Where applicants come from and how screening lands" icon={BarChart3} delay={200}>
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+                  <div className="lg:col-span-3">
+                    <Panel title="Applications by track" subtitle="Hover a bar to see alumni per track" delay={300}>
+                      <TrackBarChart data={data.by_track} />
+                    </Panel>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm font-medium text-blue-900">Total Challenges</p>
-                      <p className="mt-1 text-2xl font-bold text-blue-600">{challengeAnalytics.total_challenges}</p>
-                    </div>
-                    <div className="text-center p-3 bg-green-50 rounded-lg">
-                      <p className="text-sm font-medium text-green-900">Submissions</p>
-                      <p className="mt-1 text-2xl font-bold text-green-600">{challengeAnalytics.total_submissions}</p>
-                    </div>
-                    <div className="text-center p-3 bg-purple-50 rounded-lg">
-                      <p className="text-sm font-medium text-purple-900">Evaluated</p>
-                      <p className="mt-1 text-2xl font-bold text-purple-600">{challengeAnalytics.total_evaluated}</p>
-                    </div>
-                    <div className="text-center p-3 bg-teal-50 rounded-lg">
-                      <p className="text-sm font-medium text-teal-900">Pass Rate</p>
-                      <p className="mt-1 text-2xl font-bold text-teal-600">{challengeAnalytics.pass_rate}%</p>
-                    </div>
+                  <div className="lg:col-span-2">
+                    <Panel title="Screening outcomes" subtitle="Every applicant, by current decision" delay={400}>
+                      <OutcomeDonut data={data.outcomes} />
+                    </Panel>
                   </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <Link href="/screening" className="block">
-                      <Button variant="primary" className="w-full justify-start">
-                        <ClipboardCheck className="mr-2 h-5 w-5" />
-                        Review Screening Queue
-                        {queueStats && queueStats.requires_review > 0 && (
-                          <Badge variant="danger" className="ml-auto">{queueStats.requires_review}</Badge>
-                        )}
-                      </Button>
-                    </Link>
-                    <Link href="/challenges" className="block">
-                      <Button variant="secondary" className="w-full justify-start">
-                        <Flag className="mr-2 h-5 w-5" />
-                        Manage Challenges
-                      </Button>
-                    </Link>
-                    <Link href="/cohorts" className="block">
-                      <Button variant="secondary" className="w-full justify-start">
-                        <Calendar className="mr-2 h-5 w-5" />
-                        Manage Cohorts
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                </div>
+              </Section>
 
-          {/* Activity Feed */}
-          {activityFeed.length > 0 && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-blue-600" />
-                    Recent Activity
-                  </CardTitle>
-                  <Link href="/audit-log">
-                    <Button variant="ghost" size="sm">View All</Button>
+              {/* Section 3 — recent submissions */}
+              <Section
+                title="Recent submissions"
+                subtitle="The five latest challenge submissions"
+                icon={ListChecks}
+                delay={300}
+                action={
+                  <Link
+                    href="/challenges"
+                    className="group inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/10"
+                  >
+                    View all
+                    <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                   </Link>
+                }
+              >
+                <div className="rounded-2xl border border-gray-200/80 bg-white px-6 pb-2 shadow-sm dark:border-gray-700/80 dark:bg-gray-800">
+                  <RecentSubmissions rows={data.recent_submissions} />
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {activityFeed.slice(0, 8).map((item: any, idx: number) => {
-                    const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
-                      risk_alert: <AlertTriangle className="h-4 w-4 text-orange-500" />,
-                      warning_issued: <Shield className="h-4 w-4 text-red-500" />,
-                      evaluation: <ClipboardCheck className="h-4 w-4 text-purple-500" />,
-                      acceptance: <CheckCircle className="h-4 w-4 text-green-500" />,
-                      meeting: <Calendar className="h-4 w-4 text-blue-500" />,
-                      sprint: <Repeat className="h-4 w-4 text-teal-500" />,
-                      system: <Zap className="h-4 w-4 text-gray-500" />,
-                    };
-                    const icon = ACTIVITY_ICONS[item.type || item.action] || <Bell className="h-4 w-4 text-gray-400" />;
-                    return (
-                      <div key={item.id || idx} className="flex items-start gap-3">
-                        <div className="mt-0.5 flex-shrink-0">{icon}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-900">{item.title || item.message || item.action}</p>
-                          {item.message && item.title && (
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{item.message}</p>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
-                          {item.created_at ? new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+              </Section>
+            </>
           )}
-
-          {/* Quick Actions + Screening Queue */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {/* Quick Actions (always shown when challenge activity is above) */}
-            {challengeAnalytics && challengeAnalytics.total_challenges > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <Link href="/screening" className="block">
-                      <Button variant="primary" className="w-full justify-start">
-                        <ClipboardCheck className="mr-2 h-5 w-5" />
-                        Review Screening Queue
-                        {queueStats && queueStats.requires_review > 0 && (
-                          <Badge variant="danger" className="ml-auto">{queueStats.requires_review}</Badge>
-                        )}
-                      </Button>
-                    </Link>
-                    <Link href="/challenges" className="block">
-                      <Button variant="secondary" className="w-full justify-start">
-                        <Flag className="mr-2 h-5 w-5" />
-                        Manage Challenges
-                      </Button>
-                    </Link>
-                    <Link href="/cohorts" className="block">
-                      <Button variant="secondary" className="w-full justify-start">
-                        <Calendar className="mr-2 h-5 w-5" />
-                        Manage Cohorts
-                      </Button>
-                    </Link>
-                    <Link href="/sprints" className="block">
-                      <Button variant="secondary" className="w-full justify-start">
-                        <Repeat className="mr-2 h-5 w-5" />
-                        Sprint Board
-                      </Button>
-                    </Link>
-                    <Link href="/risk" className="block">
-                      <Button variant="secondary" className="w-full justify-start">
-                        <AlertCircle className="mr-2 h-5 w-5" />
-                        Risk Dashboard
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Screening Queue Summary */}
-            {queueStats && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Screening Queue Status</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div className="rounded-lg bg-blue-50 p-4">
-                      <p className="text-sm font-medium text-blue-900">Pending Applications</p>
-                      <p className="mt-1 text-3xl font-bold text-blue-600">{queueStats.pending_applications}</p>
-                    </div>
-                    <div className="rounded-lg bg-yellow-50 p-4">
-                      <p className="text-sm font-medium text-yellow-900">Pending Microships</p>
-                      <p className="mt-1 text-3xl font-bold text-yellow-600">{queueStats.pending_microships}</p>
-                    </div>
-                    <div className="rounded-lg bg-red-50 p-4">
-                      <p className="text-sm font-medium text-red-900">Requires Review</p>
-                      <p className="mt-1 text-3xl font-bold text-red-600">{queueStats.requires_review}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
         </div>
       )}
     </AppLayout>

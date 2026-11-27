@@ -31,7 +31,7 @@ async def create_admin_user():
         admin = User(
             email="admin@mentorled.com",
             hashed_password=get_password_hash("admin123"),
-            full_name="Admin User",
+            full_name="Olamide Johnson",
             role=UserRole.ADMIN,
             is_active=True,
             is_superuser=True
